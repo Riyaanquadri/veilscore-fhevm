@@ -3,9 +3,13 @@ import { normalizeInputs, encryptWithTFHE, callFHECompute } from "../lib/zama";
 import { submitToContract } from "../lib/contract";
 import { fetchSignals, NetworkSource } from "../lib/signals";
 
+const TIER_LABELS = ["Diamond", "Gold", "Silver", "Bronze", "Unranked"];
+
 export default function InputForm() {
   const [followers, setFollowers] = useState<number>(0);
   const [txCount, setTxCount] = useState<number>(0);
+  const [normalizedFollowers, setNormalizedFollowers] = useState<number>(0);
+  const [normalizedTxCount, setNormalizedTxCount] = useState<number>(0);
   const [chainSources, setChainSources] = useState<NetworkSource[]>([]);
   const [twitterHandle, setTwitterHandle] = useState<string>("");
   const [walletAddress, setWalletAddress] = useState<string>("");
@@ -14,6 +18,7 @@ export default function InputForm() {
   const [loading, setLoading] = useState(false);
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bracket, setBracket] = useState<number>(4);
 
   const fetchAndHydrateSignals = async () => {
     if (!twitterHandle && !walletAddress) {
@@ -35,29 +40,46 @@ export default function InputForm() {
 
     setChainSources(Array.isArray(data.sources) ? data.sources : []);
 
-    return { latestFollowers, latestTxCount };
+    const normalized = await normalizeInputs({ followers: latestFollowers, txCount: latestTxCount });
+    setNormalizedFollowers(normalized.followers);
+    setNormalizedTxCount(normalized.txCount);
+    setBracket(normalized.bracket);
+
+    return {
+      latestFollowers,
+      latestTxCount,
+      normalizedFollowers: normalized.followers,
+      normalizedTxCount: normalized.txCount,
+      bracket: normalized.bracket,
+    };
   };
 
   const onCompute = async () => {
     setLoading(true);
     setError(null);
-    let latestFollowers = followers;
-    let latestTxCount = txCount;
+    let effectiveFollowers = normalizedFollowers;
+    let effectiveTxCount = normalizedTxCount;
+    let effectiveBracket = bracket;
     try {
-      if (twitterHandle || walletAddress) {
-        setStatus("Fetching live signals for current inputs…");
-        const hydrated = await fetchAndHydrateSignals();
-        latestFollowers = hydrated.latestFollowers;
-        latestTxCount = hydrated.latestTxCount;
+      if (effectiveFollowers === 0 && effectiveTxCount === 0) {
+        if (twitterHandle || walletAddress) {
+          setStatus("Fetching live signals for current inputs…");
+          const hydrated = await fetchAndHydrateSignals();
+          effectiveFollowers = hydrated.normalizedFollowers;
+          effectiveTxCount = hydrated.normalizedTxCount;
+          effectiveBracket = hydrated.bracket;
+        } else {
+          throw new Error("Run OnChain Imprints to fetch normalized signals first.");
+        }
       }
 
-      if (latestFollowers === 0 && latestTxCount === 0) {
-        throw new Error("Fetch signals or enter manual follower/transaction values before computing.");
+      if (effectiveFollowers === 0 && effectiveTxCount === 0) {
+        throw new Error("Unable to compute because normalized signals are zero.");
       }
 
       setStatus("Encrypting and evaluating under FHE (simulated)…");
-      const normalized = await normalizeInputs({ followers: latestFollowers, txCount: latestTxCount, bracket: 1 });
-      const { ciphertext, commitment } = await encryptWithTFHE(normalized);
+      const normalizedPayload = { followers: effectiveFollowers, txCount: effectiveTxCount, bracket: effectiveBracket };
+      const { ciphertext, commitment } = await encryptWithTFHE(normalizedPayload);
       const result = await callFHECompute(ciphertext);
       await submitToContract(commitment, result.allowed);
       setAllowed(result.allowed);
@@ -126,7 +148,9 @@ export default function InputForm() {
                 onChange={(e) => setTwitterHandle(e.target.value)}
               />
             </div>
-            {followers > 0 && <div className="badge">{followers.toLocaleString()} followers</div>}
+            {normalizedFollowers > 0 && (
+              <div className="badge">Normalized followers: {normalizedFollowers.toLocaleString()}</div>
+            )}
           </div>
           <div className="input-group-with-badge">
             <div>
@@ -138,7 +162,7 @@ export default function InputForm() {
                 onChange={(e) => setWalletAddress(e.target.value)}
               />
             </div>
-            {txCount > 0 && <div className="badge">{txCount} transactions</div>}
+            {normalizedTxCount > 0 && <div className="badge">Normalized transactions: {normalizedTxCount}</div>}
           </div>
         </div>
 
@@ -146,26 +170,10 @@ export default function InputForm() {
           {prefillLoading ? "Fetching imprints…" : "OnChain Imprints"}
         </button>
 
-        {(followers > 0 || txCount > 0) && (
-          <div className="input-grid">
-            <div className="input-group">
-              <label>Followers (adjustable)</label>
-              <input
-                type="number"
-                value={followers}
-                onChange={(e) => setFollowers(Math.max(0, Number(e.target.value)))}
-                min={0}
-              />
-            </div>
-            <div className="input-group">
-              <label>Transaction Count (adjustable)</label>
-              <input
-                type="number"
-                value={txCount}
-                onChange={(e) => setTxCount(Math.max(0, Number(e.target.value)))}
-                min={0}
-              />
-            </div>
+        {(normalizedFollowers > 0 || normalizedTxCount > 0) && (
+          <div className="tier-banner">
+            <div className="tier-banner__title">Current Tier</div>
+            <div className="tier-banner__value">{TIER_LABELS[bracket] ?? "Unranked"}</div>
           </div>
         )}
 
