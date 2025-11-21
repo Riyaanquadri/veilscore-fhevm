@@ -1,5 +1,5 @@
 import { BrowserProvider, Contract, ethers } from "ethers";
-import VeilScoreArtifact from "../../../../artifacts/contracts/VeilScore.sol/VeilScore.json";
+import VeilScoreArtifact from "../abi/VeilScore.json";
 
 const VEILSCORE_ADDRESS = import.meta.env.VITE_VEILSCORE_ADDRESS as string;
 
