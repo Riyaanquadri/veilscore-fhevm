@@ -3,3 +3,8 @@ node_modules
 dist
 apps/server/dist
 apps/web/dist
+
+# Hardhat build artifacts
+artifacts/
+cache/
+typechain-types/
