@@ -4,15 +4,11 @@ export type NetworkSource = {
   key: string;
   label: string;
   txCount: number;
-  firstTxAt: string | null;
-  inboundEth: number;
 };
 
 export type SignalResponse = {
   followers?: number | null;
   txCount?: number | null;
-  totalInboundEth?: number | null;
-  earliestFirstTx?: string | null;
   sources?: NetworkSource[];
 };
 
