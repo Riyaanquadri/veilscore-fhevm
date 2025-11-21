@@ -77,3 +77,22 @@ pnpm server:dev
 ```
 
 Then start the frontend (`pnpm dev`) and use the “Fetch live signals” button to automatically populate follower count (from Twitter), cumulative tx count, per-chain first transaction timestamps, and ETH inflow totals (Ethereum + Base + Arbitrum + Optimism).
+
+## Deploying on Vercel
+
+You can create two Vercel projects from this repo—one for the Vite frontend and another for the serverless signal API.
+
+### Frontend (`apps/web`)
+- **Root Directory:** `apps/web`
+- **Framework Preset:** Vite (Vercel auto-detects)
+- **Build Command:** `pnpm install --frozen-lockfile && pnpm build`
+- **Output Directory:** `dist`
+- **Env Vars:** `VITE_VEILSCORE_ADDRESS`, `VITE_API_BASE_URL` (point this to the deployed backend URL).
+
+### Backend (`apps/server`)
+- **Root Directory:** `apps/server`
+- **Build Command:** `pnpm install --frozen-lockfile` (TypeScript is bundled automatically for the `api/` folder)
+- **Serverless Entry:** `api/index.ts` exports the Express app so Vercel can host `/api/signals` without a long-running server.
+- **Env Vars:** `TWITTER_BEARER_TOKEN`, `ETHERSCAN_API_KEY`, `BASESCAN_API_KEY`, `ARBISCAN_API_KEY`, `OPTIMISM_API_KEY`, and the RPC URLs listed above.
+
+Each Vercel project will create its own deployment. Once both are live, update the frontend’s `VITE_API_BASE_URL` to the backend deployment URL and redeploy the frontend so the UI calls the hosted API.
