@@ -15,19 +15,48 @@ export default function InputForm() {
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchAndHydrateSignals = async () => {
+    if (!twitterHandle && !walletAddress) {
+      throw new Error("Provide a Twitter handle or wallet address.");
+    }
+
+    const data = await fetchSignals({ twitterHandle, address: walletAddress });
+    let latestFollowers = followers;
+    let latestTxCount = txCount;
+
+    if (typeof data.followers === "number") {
+      latestFollowers = data.followers;
+      setFollowers(latestFollowers);
+    }
+    if (typeof data.txCount === "number") {
+      latestTxCount = data.txCount;
+      setTxCount(latestTxCount);
+    }
+
+    setChainSources(Array.isArray(data.sources) ? data.sources : []);
+
+    return { latestFollowers, latestTxCount };
+  };
+
   const onCompute = async () => {
     setLoading(true);
     setError(null);
-    
-    if (followers === 0 || txCount === 0) {
-      setError("Please fetch signals first or enter valid values.");
-      setLoading(false);
-      return;
-    }
-    
-    setStatus("Encrypting and evaluating under FHE (simulated)…");
+    let latestFollowers = followers;
+    let latestTxCount = txCount;
     try {
-      const normalized = await normalizeInputs({ followers, txCount, bracket: 1 });
+      if (twitterHandle || walletAddress) {
+        setStatus("Fetching live signals for current inputs…");
+        const hydrated = await fetchAndHydrateSignals();
+        latestFollowers = hydrated.latestFollowers;
+        latestTxCount = hydrated.latestTxCount;
+      }
+
+      if (latestFollowers === 0 && latestTxCount === 0) {
+        throw new Error("Fetch signals or enter manual follower/transaction values before computing.");
+      }
+
+      setStatus("Encrypting and evaluating under FHE (simulated)…");
+      const normalized = await normalizeInputs({ followers: latestFollowers, txCount: latestTxCount, bracket: 1 });
       const { ciphertext, commitment } = await encryptWithTFHE(normalized);
       const result = await callFHECompute(ciphertext);
       await submitToContract(commitment, result.allowed);
@@ -50,14 +79,7 @@ export default function InputForm() {
     setPrefillLoading(true);
     setStatus("Fetching live signals…");
     try {
-      const data = await fetchSignals({ twitterHandle, address: walletAddress });
-      if (typeof data.followers === "number") {
-        setFollowers(data.followers);
-      }
-      if (typeof data.txCount === "number") {
-        setTxCount(data.txCount);
-      }
-      setChainSources(Array.isArray(data.sources) ? data.sources : []);
+      await fetchAndHydrateSignals();
       setStatus("Signals fetched. You can tweak before computing.");
     } catch (err: any) {
       console.error(err);
