@@ -23,7 +23,8 @@
 
 ### I'm integrating components
 → Read **[INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)** (step-by-step)  
-→ Test locally using 5-terminal setup in **[README.md](../README.md)**
+→ Then **[ZAMA_DOCS_QUICK_REFERENCE.md](ZAMA_DOCS_QUICK_REFERENCE.md)** for Zama API details  
+→ Use **[ZAMA_DOCS_GATHERING.md](ZAMA_DOCS_GATHERING.md)** to collect from official docs
 
 ### I want the full picture
 → Start with **[README.md](../README.md)**  
@@ -43,6 +44,8 @@
 | **QUICK_START.md** | Quick reference, copy-paste commands | Users in hurry | 5 min |
 | **END_TO_END_FLOW.md** | Complete "Compute VeilScore" user journey | Everyone | 15 min |
 | **SESSION_SUMMARY.md** | What was built in this session | Technical leads | 15 min |
+| **ZAMA_DOCS_GATHERING.md** | Comprehensive checklist for fetching Zama FHEVM docs | Integrators | 80 min (gathering) |
+| **ZAMA_DOCS_QUICK_REFERENCE.md** | Quick lookup — where to find each piece in Zama docs | Integrators | 5 min |
 
 ### Understanding the Design
 
