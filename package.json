@@ -1,0 +1,27 @@
+{
+  "name": "veilscore-fhevm",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "pnpm -C apps/web dev",
+    "build": "pnpm -C apps/web build",
+    "preview": "pnpm -C apps/web preview",
+    "test": "hardhat test",
+    "lint": "echo 'no lint configured'",
+    "node:worker": "node worker/compute.js",
+    "hardhat:node": "hardhat node",
+    "hardhat:deploy": "hardhat run scripts/deploy.ts",
+    "server:dev": "pnpm -C apps/server dev",
+    "server:build": "pnpm -C apps/server build"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
