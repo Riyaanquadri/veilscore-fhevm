@@ -5,85 +5,240 @@ Private Reputation Oracle (VeilScore) — client-side encrypted signals computed
 ## Architecture
 
 - **Contracts**: `contracts/VeilScore.sol` stores a commitment (bytes32) and a boolean `allowed` flag per address. All heavy FHE computation happens off-chain.
-- **Frontend**: `apps/web` is a Vite + React + TypeScript app that collects user inputs, calls placeholder Zama TFHE helpers in `src/lib/zama.ts`, and submits results to the contract via `src/lib/contract.ts`.
-- **Worker**: `worker/compute.js` simulates an FHE compute service; replace its internals with calls to Zama's FHE runtime.
+- **Frontend**: `apps/web` is a Vite + React + TypeScript app that collects user inputs, calls Zama TFHE helpers in `src/lib/zama.ts`, and submits results to the contract via `src/lib/contract.ts`.
+- **Backend**: `apps/server` is an Express service that fetches public signals (Twitter followers, on-chain transaction counts) for prefilling user inputs.
+- **FHEVM Integration**: Uses Zama's relayer SDK (loaded via CDN) + adaptive config detection (`useFhevm.ts` hook) to encrypt inputs and evaluate inside Sepolia FHEVM.
 
 ## Getting Started
 
-Install dependencies (root + frontend + server) with pnpm:
+### Prerequisites
+
+- **Node.js**: 18+
+- **pnpm**: For monorepo management
+- **Sepolia ETH**: For deploying and registering contracts (get from [Infura Faucet](https://www.infura.io/faucet/sepolia))
+- **Infura/Alchemy Project**: For Sepolia RPC endpoint
+
+### Local Development
+
+1. **Install dependencies** (root + all workspaces):
 
 ```bash
 pnpm install
-pnpm -C apps/web install
-pnpm -C apps/server install
 ```
 
-Run Hardhat tests:
+2. **Set up environment variables** (copy `.env.example` to `.env`):
+
+```bash
+cp .env.example .env
+# Edit .env and fill in:
+# - DEPLOYER_PRIVATE_KEY (funded Sepolia account)
+# - SEPOLIA_RPC_URL (Infura or Alchemy Sepolia endpoint)
+# - TWITTER_BEARER_TOKEN (for signal fetching)
+# - RPC URLs for Ethereum, Base, Arbitrum, Optimism
+```
+
+3. **Run tests**:
 
 ```bash
 pnpm test
 ```
 
-Start a local Hardhat node and deploy the contract:
+4. **Start local Hardhat node and services**:
 
 ```bash
+# Terminal 1: Start Hardhat node
 npx hardhat node
-pnpm hardhat:deploy --network localhost
-```
 
-Copy the deployed address into `apps/web/.env` as `VITE_VEILSCORE_ADDRESS` and point the frontend to the signal API (defaults shown below).
+# Terminal 2: Deploy to localhost
+npx hardhat run scripts/deploy.ts --network localhost
 
-Start the frontend:
+# Terminal 3: Start backend signal service
+pnpm server:dev
 
-```bash
+# Terminal 4: Start frontend
 pnpm dev
 ```
 
-This will launch the VeilScore demo UI, which simulates client-side encryption + FHE compute and writes a commitment + boolean gate on-chain.
+The frontend will be available at `http://localhost:5173`.
+
+## Deploying to Sepolia
+
+### 1. Deploy VeilScore Contract
+
+```bash
+npx hardhat run scripts/deploy.ts --network sepolia
+```
+
+This will output the deployed contract address. Update `.env`:
+
+```bash
+VITE_VEILSCORE_ADDRESS=0x<deployed_address>
+```
+
+### 2. Register in ACL (Relayer Trust)
+
+The Zama relayer needs to know your contract is eligible for evaluation. Register it in the Sepolia ACL:
+
+```bash
+npx hardhat run scripts/registerAcl.ts --network sepolia
+```
+
+See [ACL_REGISTRATION.md](docs/ACL_REGISTRATION.md) for detailed explanation of registration patterns and troubleshooting.
+
+### 3. Deploy Frontend & Backend
+
+Push to GitHub and connect to Vercel:
+
+- **Frontend** (`apps/web`): Deploy Vite app as static site
+- **Backend** (`apps/server`): Deploy Node.js as serverless function (API)
+
+Update frontend's `VITE_API_BASE_URL` to the Vercel backend URL and redeploy.
 
 ## Signal Fetch Service
 
-`apps/server` hosts a lightweight Express service that pulls public metrics so the UI can prefill follower counts and transaction statistics.
+`apps/server` hosts an Express service that pulls public metrics for prefilling user inputs.
 
-### Environment variables
+### Environment Variables
 
-Create a `.env` file at the repo root (loaded by both Hardhat and the server):
+Add to `.env`:
 
-```
+```bash
 TWITTER_BEARER_TOKEN=your-twitter-bearer-token
-ETHERSCAN_API_KEY=your-etherscan-api-key
-BASESCAN_API_KEY=optional-basescan-key (falls back to ETHERSCAN_API_KEY)
-ARBISCAN_API_KEY=optional-arbiscan-key (falls back to ETHERSCAN_API_KEY)
-OPTIMISM_API_KEY=optional-optimism-etherscan-key (falls back to ETHERSCAN_API_KEY)
-ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/... (or Alchemy, etc.)
+ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/...
 BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/...
 ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc
 OPTIMISM_RPC_URL=https://mainnet.optimism.io
+VITE_API_BASE_URL=http://localhost:4000  # Frontend
 ```
 
-Basescan/Arbiscan/Optimism keys fall back to the main `ETHERSCAN_API_KEY`, but providing dedicated keys helps avoid rate limits.
-
-For the frontend, add these to `apps/web/.env`:
-
-```
-VITE_VEILSCORE_ADDRESS=0x...
-VITE_API_BASE_URL=http://localhost:4000
-```
-
-### Run the service
+### Run the Service
 
 ```bash
 pnpm server:dev
 ```
 
-Then start the frontend (`pnpm dev`) and use the "Fetch live signals" button to automatically populate follower count (from Twitter) and cumulative transaction count.
+The signal API runs on `http://localhost:4000`.
+
+## Zama FHEVM Configuration
+
+### Sepolia Network Config
+
+Edit `hardhat.config.ts` to ensure Sepolia is configured:
+
+```typescript
+sepolia: {
+  url: process.env.SEPOLIA_RPC_URL,
+  accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+  chainId: 11155111
+}
+```
+
+### FHEVM Client Config
+
+Check `apps/web/src/lib/fhevmConfig.ts` for Sepolia FHEVM parameters:
+
+- **Relayer URL**: Zama's relayer endpoint
+- **RPC URL**: Sepolia JSON-RPC
+- **ACL/Verifier Addresses**: From Zama docs
+- **Public Key Size**: 2048 bits
+
+The `useFhevm()` hook (in `apps/web/src/lib/useFhevm.ts`) manages the FHEVM instance lifecycle and adapts to different SDK versions.
+
+### Relayer SDK
+
+The Zama relayer SDK is loaded via CDN in `apps/web/index.html`:
+
+```html
+<script src="https://cdn.zama.org/relayer-sdk/relayer-sdk.latest.js"></script>
+```
+
+Initialize it in `apps/web/src/lib/relayerInit.ts`:
+
+```typescript
+await initRelayerSDK();  // Initializes window.relayerSDK
+```
+
+## Data Flow
+
+1. **User Input**: Twitter handle and blockchain wallet address
+2. **Fetch Signals**: Backend queries Twitter API + RPC providers for follower count + transaction count
+3. **Normalize**: Inputs converted to tier (Diamond/Gold/Silver/Bronze/Unranked) based on thresholds
+4. **Encrypt**: Tier + commitment encrypted via Zama TFHE SDK
+5. **Evaluate**: Relayer evaluates encrypted data; checks tier threshold
+6. **Submit**: Result (commitment + allowed gate) submitted to VeilScore contract
+7. **Store**: Contract stores commitment and gate per user address; emits event
+
+## Project Structure
+
+```
+.
+├── contracts/
+│   └── VeilScore.sol           # Main contract (commitment + gate storage)
+├── scripts/
+│   ├── deploy.ts                # Deploy to Sepolia
+│   └── registerAcl.ts           # Register in ACL for relayer trust
+├── apps/
+│   ├── web/
+│   │   ├── src/
+│   │   │   ├── components/InputForm.tsx   # Main UI form
+│   │   │   ├── lib/
+│   │   │   │   ├── zama.ts                # TFHE encryption pipeline
+│   │   │   │   ├── fhevmConfig.ts         # Sepolia FHEVM config
+│   │   │   │   ├── useFhevm.ts            # React hook for FHEVM instance
+│   │   │   │   ├── relayerInit.ts         # Relayer SDK initialization
+│   │   │   │   ├── contract.ts            # Contract interaction
+│   │   │   │   └── signals.ts             # Types for signals
+│   │   │   ├── abi/
+│   │   │   │   └── VeilScore.json         # Contract ABI
+│   │   │   └── index.css
+│   │   └── index.html                     # Relayer SDK script here
+│   └── server/
+│       └── src/
+│           ├── app.ts                     # Express app + signal endpoints
+│           └── api/index.ts               # Vercel serverless API
+├── docs/
+│   └── ACL_REGISTRATION.md                # ACL registration guide
+├── hardhat.config.ts
+├── .env.example                           # Environment template
+└── package.json
+```
 
 ## Deploying on Vercel
 
-You can create two Vercel projects from this repo—one for the Vite frontend and another for the serverless signal API.
+Create two Vercel projects:
 
-### Frontend (`apps/web`)
+1. **Frontend** (`apps/web`): Set root to `apps/web`, framework = Vite
+2. **Backend** (`apps/server`): Set root to `apps/server`, framework = Other (Node.js)
 
-### Backend (`apps/server`)
+Update frontend's `VITE_API_BASE_URL` to the backend deployment URL before redeploying.
 
-Each Vercel project will create its own deployment. Once both are live, update the frontend’s `VITE_API_BASE_URL` to the backend deployment URL and redeploy the frontend so the UI calls the hosted API.
+## Documentation
+
+- **[ACL_REGISTRATION.md](docs/ACL_REGISTRATION.md)**: Relayer trust + ACL registration patterns
+- **[.env.example](.env.example)**: All environment variables with descriptions
+- **[copilot-instructions.md](.github/copilot-instructions.md)**: AI coding guidelines for this repo
+
+## Troubleshooting
+
+### "Cannot find VeilScore contract"
+
+Ensure you've deployed the contract and set `VITE_VEILSCORE_ADDRESS` in `.env`.
+
+### "Relayer rejected submission"
+
+Check that VeilScore is registered in the ACL (`registerAcl.ts`). If not, run the registration script.
+
+### "Zero signal values"
+
+Ensure:
+- `TWITTER_BEARER_TOKEN` is set and valid
+- `ETHEREUM_RPC_URL` and other chain RPCs are valid
+- Backend service is running (`pnpm server:dev`)
+
+## References
+
+- [Zama FHEVM Docs](https://docs.zama.ai/fhevm)
+- [Zama Relayer SDK](https://docs.zama.ai/fhevm/guides/relayer)
+- [Sepolia Faucet](https://www.infura.io/faucet/sepolia)
+- [Infura](https://www.infura.io)
+- [Alchemy](https://www.alchemy.com)

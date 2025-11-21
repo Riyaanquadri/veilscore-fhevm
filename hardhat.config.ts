@@ -9,6 +9,11 @@ const config: HardhatUserConfig = {
   networks: {
     localhost: {
       url: process.env.HARDHAT_RPC_URL || "http://127.0.0.1:8545"
+    },
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL || "https://sepolia.infura.io/v3/YOUR_PROJECT_ID",
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      chainId: 11155111
     }
   },
   paths: {
