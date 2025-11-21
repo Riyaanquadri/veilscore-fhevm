@@ -5,20 +5,17 @@
 export type NormalizedInputs = {
   followers: number;
   txCount: number;
-  inboundEth: number;
   bracket: number;
 };
 
 export async function normalizeInputs(inputs: {
   followers: number;
   txCount: number;
-  inboundEth: number;
   bracket: number;
 }): Promise<NormalizedInputs> {
   return {
     followers: Math.min(65535, Math.round(inputs.followers / 10)),
     txCount: Math.min(65535, Math.round(inputs.txCount)),
-    inboundEth: Math.min(65535, Math.round(inputs.inboundEth * 1000)),
     bracket: inputs.bracket ? 1 : 0,
   };
 }

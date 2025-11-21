@@ -6,8 +6,6 @@ import { fetchSignals, NetworkSource } from "../lib/signals";
 export default function InputForm() {
   const [followers, setFollowers] = useState<number>(1000);
   const [txCount, setTxCount] = useState<number>(10);
-  const [totalInboundEth, setTotalInboundEth] = useState<number>(0);
-  const [earliestFirstTx, setEarliestFirstTx] = useState<string>("");
   const [chainSources, setChainSources] = useState<NetworkSource[]>([]);
   const [twitterHandle, setTwitterHandle] = useState<string>("");
   const [walletAddress, setWalletAddress] = useState<string>("");
@@ -22,7 +20,7 @@ export default function InputForm() {
     setError(null);
     setStatus("Encrypting and evaluating under FHE (simulated)…");
     try {
-      const normalized = await normalizeInputs({ followers, txCount, inboundEth: totalInboundEth, bracket: 1 });
+      const normalized = await normalizeInputs({ followers, txCount, bracket: 1 });
       const { ciphertext, commitment } = await encryptWithTFHE(normalized);
       const result = await callFHECompute(ciphertext);
       await submitToContract(commitment, result.allowed);
@@ -52,8 +50,6 @@ export default function InputForm() {
       if (typeof data.txCount === "number") {
         setTxCount(data.txCount);
       }
-      setTotalInboundEth(typeof data.totalInboundEth === "number" ? data.totalInboundEth : 0);
-      setEarliestFirstTx(typeof data.earliestFirstTx === "string" ? data.earliestFirstTx : "");
       setChainSources(Array.isArray(data.sources) ? data.sources : []);
       setStatus("Signals fetched. You can tweak before computing.");
     } catch (err: any) {
@@ -91,70 +87,46 @@ export default function InputForm() {
 
       <section className="glass-card form-card">
         <div className="input-grid">
-          <div className="input-group">
-            <label>Twitter Handle</label>
-            <input
-              type="text"
-              placeholder="riyaanquadri"
-              value={twitterHandle}
-              onChange={(e) => setTwitterHandle(e.target.value)}
-            />
+          <div className="input-group-with-badge">
+            <div>
+              <label>Twitter Handle</label>
+              <input
+                type="text"
+                placeholder="riyaanquadri"
+                value={twitterHandle}
+                onChange={(e) => setTwitterHandle(e.target.value)}
+              />
+            </div>
+            {followers > 0 && <div className="badge">{followers.toLocaleString()} followers</div>}
           </div>
-          <div className="input-group">
-            <label>Wallet Address</label>
-            <input
-              type="text"
-              placeholder="0x..."
-              value={walletAddress}
-              onChange={(e) => setWalletAddress(e.target.value)}
-            />
+          <div className="input-group-with-badge">
+            <div>
+              <label>Wallet Address</label>
+              <input
+                type="text"
+                placeholder="0x..."
+                value={walletAddress}
+                onChange={(e) => setWalletAddress(e.target.value)}
+              />
+            </div>
+            {txCount > 0 && <div className="badge">{txCount} transactions</div>}
           </div>
         </div>
 
         <button onClick={onPrefill} className="primary-btn" disabled={prefillLoading}>
-          {prefillLoading ? "Fetching signals…" : "Fetch live signals"}
+          {prefillLoading ? "Fetching imprints…" : "OnChain Imprints"}
         </button>
-
-        <div className="input-grid">
-          <div className="input-group">
-            <label>Followers</label>
-            <input type="number" value={followers} min={0} readOnly className="disabled-input" />
-          </div>
-          <div className="input-group">
-            <label>On-chain Tx Count</label>
-            <input type="number" value={txCount} min={0} readOnly className="disabled-input" />
-          </div>
-          <div className="input-group">
-            <label>Total Inbound ETH</label>
-            <input type="number" value={totalInboundEth} min={0} readOnly className="disabled-input" />
-          </div>
-        </div>
-
-        <div className="input-grid">
-          <div className="input-group">
-            <label>Earliest First Tx</label>
-            <input
-              type="text"
-              value={earliestFirstTx ? new Date(earliestFirstTx).toLocaleString() : ""}
-              placeholder="Prefill to view"
-              readOnly
-              className="disabled-input"
-            />
-          </div>
-        </div>
 
         <div className="chain-breakdown">
           <h3>Per-chain signals</h3>
           {chainSources.length === 0 ? (
-            <p className="status-text">Fetch signals to view chain-level first transactions and inflows.</p>
+            <p className="status-text">Fetch signals to view chain-level transaction counts.</p>
           ) : (
             <div className="chain-grid">
               {chainSources.map((source) => (
                 <div key={source.key} className="metric-chip chain-chip">
                   <div className="metric-label">{source.label}</div>
-                  <div className="metric-value">{source.txCount} tx</div>
-                  <div className="chain-meta">First tx: {formatFirstTx(source.firstTxAt)}</div>
-                  <div className="chain-meta">Inbound: {formatInbound(source.inboundEth)} Ξ</div>
+                  <div className="metric-value">{source.txCount} transactions</div>
                 </div>
               ))}
             </div>
@@ -177,16 +149,4 @@ export default function InputForm() {
       </section>
     </div>
   );
-}
-
-function formatFirstTx(iso?: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString();
-}
-
-function formatInbound(value?: number | null) {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return "0.0000";
-  }
-  return value.toFixed(4);
 }
