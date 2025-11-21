@@ -43,7 +43,7 @@ cp .env.example .env
 pnpm test
 ```
 
-4. **Start local Hardhat node and services**:
+4. **Start local Hardhat node and services** (with local relayer stub):
 
 ```bash
 # Terminal 1: Start Hardhat node
@@ -52,12 +52,17 @@ npx hardhat node
 # Terminal 2: Deploy to localhost
 npx hardhat run scripts/deploy.ts --network localhost
 
-# Terminal 3: Start backend signal service
+# Terminal 3: Start local relayer stub (simulates FHEVM relayer)
+node worker/relayerStub.js
+
+# Terminal 4: Start backend signal service
 pnpm server:dev
 
-# Terminal 4: Start frontend
+# Terminal 5: Start frontend
 pnpm dev
 ```
+
+The frontend automatically detects localhost and routes FHEVM calls to the local relayer stub (http://localhost:3000) via the `mockChains` mapping in `useFhevm.ts`.
 
 The frontend will be available at `http://localhost:5173`.
 

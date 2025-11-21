@@ -26,12 +26,16 @@
 
 - [ ] Run `pnpm install`
 - [ ] Run `pnpm test` (all tests pass)
-- [ ] Deploy to localhost: `npx hardhat run scripts/deploy.ts --network localhost`
-- [ ] Start backend: `pnpm server:dev`
-- [ ] Start frontend: `pnpm dev`
+- [ ] **Start local relayer stub**: `node worker/relayerStub.js` (Terminal 1)
+- [ ] **Start Hardhat node**: `npx hardhat node` (Terminal 2)
+- [ ] **Deploy to localhost**: `npx hardhat run scripts/deploy.ts --network localhost` (Terminal 3)
+- [ ] **Start backend**: `pnpm server:dev` (Terminal 4)
+- [ ] **Start frontend**: `pnpm dev` (Terminal 5)
 - [ ] Test UI locally at `http://localhost:5173`
 - [ ] Verify "Fetch live signals" button works (if Twitter key is set)
-- [ ] Verify "OnChain Imprints" button works (encrypts and encodes)
+- [ ] Verify "OnChain Imprints" button works (encrypts and submits to local contract)
+- [ ] Check that frontend routes to local relayer stub (http://localhost:3000)
+- [ ] Verify contract receives signed submissions via `submitWithSig()`
 
 ## Sepolia Deployment
 
@@ -46,16 +50,58 @@
 
 ### Register in ACL
 
-- [ ] Run registration: `npx hardhat run scripts/registerAcl.ts --network sepolia`
-- [ ] Verify output shows "✅ Successfully registered in ACL!"
-- [ ] Verify with cast:
+- [ ] Understand ACL registration process (see [RELAYER_ARCHITECTURE.md](RELAYER_ARCHITECTURE.md))
+- [ ] **Determine if you have ACL admin privileges:**
+  - [ ] If yes (you deployed the ACL or Zama gave you admin key): Run registration script
+  - [ ] If no: Request registration via Zama GitHub or dashboard
+- [ ] If running registration script:
+  - [ ] Run: `npx hardhat run scripts/registerAcl.ts --network sepolia`
+  - [ ] Verify output shows "✅ Successfully registered in ACL!"
+  - [ ] If script fails with "not the admin", contact Zama or follow their registration process
+- [ ] Verify registration on Etherscan:
   ```bash
   cast call 0x2aebcdc4ef0eb9b2dc5bb75060f7e3a4b5d5c5b0 \
     "isContractRegistered(address)(bool)" \
-    <VEILSCORE_ADDRESS> \
+    0x<VEILSCORE> \
     --rpc-url $SEPOLIA_RPC_URL
   ```
-- [ ] Output should be `true`
+  - [ ] Output should be `true`
+
+### Privacy Model Selection
+
+- [ ] **Choose privacy model** (see [RELAYER_ARCHITECTURE.md](RELAYER_ARCHITECTURE.md)):
+  - [ ] **Model 1 (Encrypted): Highest Privacy** ⭐ Recommended for production
+    - User decrypts result locally
+    - User signs and submits locally
+    - Relayer never sees plaintext result
+    - Implementation status: 🔴 Future (requires additional FHEVM SDK calls)
+  
+  - [ ] **Model 2 (Relayer-Signed): Demo Simplicity** ✅ Current
+    - Relayer computes and signs plaintext result
+    - Client submits relayer's signature
+    - Relayer is trusted authority
+    - Implementation status: ✅ Ready now
+    - Use for: MVP, demos, internal testing
+
+- [ ] If upgrading to Model 1 later:
+  - [ ] Update `callFHECompute()` to request encrypted result
+  - [ ] Add client-side decryption step
+  - [ ] Switch from `submit()` to `submitWithSig()` with user signature
+  - [ ] Update relayer flow (requires relayer updates)
+
+### Relayer Authority
+
+- [ ] **Set relayer address** on contract if using Model 2:
+  ```bash
+  cast send 0x<VEILSCORE> "setRelayerAddress(address)" 0x<RELAYER_ADDRESS> \
+    --rpc-url $SEPOLIA_RPC_URL \
+    --private-key $DEPLOYER_PRIVATE_KEY
+  ```
+- [ ] Verify relayer address:
+  ```bash
+  cast call 0x<VEILSCORE> "relayerAddress()" --rpc-url $SEPOLIA_RPC_URL
+  ```
+- [ ] Document relayer address for audits and monitoring
 
 ### Test on Sepolia
 
