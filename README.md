@@ -11,6 +11,10 @@ Private Reputation Oracle (VeilScore) — client-side encrypted signals computed
 
 ## Getting Started
 
+### Want the complete user journey?
+
+👉 Read **[docs/END_TO_END_FLOW.md](docs/END_TO_END_FLOW.md)** (15 min) — Traces exactly what happens when a user clicks "Compute VeilScore" from browser encryption to on-chain storage.
+
 ### Prerequisites
 
 - **Node.js**: 18+

@@ -9,6 +9,10 @@
 ### I'm in a hurry
 → Start with **[QUICK_START.md](QUICK_START.md)** (5 minutes)
 
+### I want to understand the user journey
+→ Read **[END_TO_END_FLOW.md](END_TO_END_FLOW.md)** (15 minutes)  
+→ Traces "Compute VeilScore" from click → relayer → on-chain storage
+
 ### I want to understand the architecture
 → Read **[ARCHITECTURE_DIAGRAMS.md](ARCHITECTURE_DIAGRAMS.md)** (visual)  
 → Then **[RELAYER_ARCHITECTURE.md](RELAYER_ARCHITECTURE.md)** (deep dive)
@@ -23,6 +27,7 @@
 
 ### I want the full picture
 → Start with **[README.md](../README.md)**  
+→ Then **[END_TO_END_FLOW.md](END_TO_END_FLOW.md)** (understand the user journey)  
 → Then **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)**  
 → Then this index to explore specific topics
 
@@ -36,6 +41,7 @@
 |------|---------|----------|------|
 | **README.md** | Main entry point, all core info | Everyone | 10 min |
 | **QUICK_START.md** | Quick reference, copy-paste commands | Users in hurry | 5 min |
+| **END_TO_END_FLOW.md** | Complete "Compute VeilScore" user journey | Everyone | 15 min |
 | **SESSION_SUMMARY.md** | What was built in this session | Technical leads | 15 min |
 
 ### Understanding the Design
