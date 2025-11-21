@@ -4,8 +4,8 @@ import { submitToContract } from "../lib/contract";
 import { fetchSignals, NetworkSource } from "../lib/signals";
 
 export default function InputForm() {
-  const [followers, setFollowers] = useState<number>(1000);
-  const [txCount, setTxCount] = useState<number>(10);
+  const [followers, setFollowers] = useState<number>(0);
+  const [txCount, setTxCount] = useState<number>(0);
   const [chainSources, setChainSources] = useState<NetworkSource[]>([]);
   const [twitterHandle, setTwitterHandle] = useState<string>("");
   const [walletAddress, setWalletAddress] = useState<string>("");
@@ -18,6 +18,13 @@ export default function InputForm() {
   const onCompute = async () => {
     setLoading(true);
     setError(null);
+    
+    if (followers === 0 || txCount === 0) {
+      setError("Please fetch signals first or enter valid values.");
+      setLoading(false);
+      return;
+    }
+    
     setStatus("Encrypting and evaluating under FHE (simulated)…");
     try {
       const normalized = await normalizeInputs({ followers, txCount, bracket: 1 });
@@ -116,6 +123,29 @@ export default function InputForm() {
         <button onClick={onPrefill} className="primary-btn" disabled={prefillLoading}>
           {prefillLoading ? "Fetching imprints…" : "OnChain Imprints"}
         </button>
+
+        {(followers > 0 || txCount > 0) && (
+          <div className="input-grid">
+            <div className="input-group">
+              <label>Followers (adjustable)</label>
+              <input
+                type="number"
+                value={followers}
+                onChange={(e) => setFollowers(Math.max(0, Number(e.target.value)))}
+                min={0}
+              />
+            </div>
+            <div className="input-group">
+              <label>Transaction Count (adjustable)</label>
+              <input
+                type="number"
+                value={txCount}
+                onChange={(e) => setTxCount(Math.max(0, Number(e.target.value)))}
+                min={0}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="chain-breakdown">
           <h3>Per-chain signals</h3>
