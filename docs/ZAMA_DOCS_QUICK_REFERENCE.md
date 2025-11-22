@@ -4,6 +4,24 @@
 
 ---
 
+## 🎯 LOAD-BEARING ITEMS (Critical Resources)
+
+These are the **primary sources** for VeilScore integration. Start here.
+
+| Item | Link | Purpose |
+|------|------|---------|
+| **Relayer SDK** | https://github.com/zama-ai/relayer-sdk | Primary source for Relayer APIs and built-in network configs |
+| **Relayer Docs** | https://docs.zama.org/guides/relayer-sdk | Canonical docs for submit/evaluate flows and API shapes |
+| **TFHE Core (tfhe-rs)** | https://github.com/zama-ai/tfhe-rs | Authoritative Rust implementation + WASM client |
+| **JS on WASM Tutorial** | https://docs.zama.org/guides/js-tfhe | Browser keygen/encrypt with WASM |
+| **@zama-fhe/tfhe-js** | https://cdn.jsdelivr.net/npm/@zama-fhe/tfhe-js | JS wrapper for easier browser integration |
+| **FHEVM React Template** | https://github.com/zama-ai/fhevm-react-template | Reference implementation of client ↔ relayer patterns |
+| **Zama Discord** | https://discord.gg/ZkE4GkSKsq | Community support for integration blockers |
+
+**Action:** Clone/bookmark these repos. They are your integration source of truth.
+
+---
+
 ## 1. Network & RPC Configuration
 
 | What | Where | Look For |
