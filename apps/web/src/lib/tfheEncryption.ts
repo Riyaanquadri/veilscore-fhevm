@@ -117,51 +117,43 @@ export async function initializeTfheWasm(): Promise<void> {
       (window as any).exports = {};
     }
     
-    // Dynamic import to load WASM module at runtime
-    console.log('[TFHE] Importing @zama-fhe/tfhe-js...');
-    const tfheModule = await import('@zama-fhe/tfhe-js') as any;
+    // Import browser-specific version which has the proper initSDK function
+    console.log('[TFHE] Importing @zama-fhe/tfhe-js/browser...');
+    const tfheModule = await import('@zama-fhe/tfhe-js/browser') as any;
     
-    console.log('[TFHE] Available exports:', Object.keys(tfheModule).slice(0, 10));
+    console.log('[TFHE] Package loaded, checking exports...');
     
-    // The package exports both:
-    // - default export (init function) via initSDK
-    // - TFHERs (the WASM bindings)
+    // Extract the initSDK function - it should be a proper async function
+    const initSDK = tfheModule.initSDK;
+    
+    if (typeof initSDK !== 'function') {
+      console.error('[TFHE] initSDK is not a function', {
+        type: typeof initSDK,
+        value: initSDK,
+        keys: Object.keys(tfheModule).slice(0, 15),
+      });
+      throw new Error('initSDK is not a function - package may not be properly imported');
+    }
+    
+    // Initialize WASM module with optional custom path
+    console.log('[TFHE] Calling initSDK()...');
+    await initSDK();
+    
+    // Get TFHERs reference after initialization
     const TFHERs = tfheModule.TFHERs;
     
-    // Try initSDK first, fall back to direct init
-    let initFunction = tfheModule.initSDK;
-    
-    if (!initFunction && tfheModule.default) {
-      console.log('[TFHE] Using default export as init function');
-      initFunction = tfheModule.default;
+    if (!TFHERs) {
+      console.warn('[TFHE] TFHERs not found after init, continuing anyway');
     }
-    
-    if (typeof initFunction !== 'function') {
-      console.error('[TFHE] No valid init function found', {
-        hasInitSDK: typeof tfheModule.initSDK,
-        hasDefault: typeof tfheModule.default,
-        keys: Object.keys(tfheModule),
-      });
-      throw new Error('No initialization function found in TFHE module');
-    }
-    
-    // Initialize WASM module
-    console.log('[TFHE] Initializing WASM...');
-    await initFunction();
     
     // Store the WASM module reference
     tfheModule._wasm = TFHERs;
     tfheReady = true;
     
-    console.log('[TFHE] WASM module ready for encryption');
+    console.log('[TFHE] WASM module successfully initialized');
   } catch (err) {
     console.error('[TFHE] Failed to initialize WASM module:', err);
-    
-    // More detailed error message
     const errorDetails = err instanceof Error ? err.message : String(err);
-    if (errorDetails.includes('exports')) {
-      throw new Error(`TFHE WASM initialization failed: CommonJS interop issue - ${errorDetails}`);
-    }
     throw new Error(`TFHE WASM initialization failed: ${errorDetails}`);
   }
 }
