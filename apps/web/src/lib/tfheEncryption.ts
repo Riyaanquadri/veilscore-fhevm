@@ -112,32 +112,24 @@ export async function initializeTfheWasm(): Promise<void> {
   try {
     console.log('[TFHE] Loading TFHE WASM module...');
     
-    // Import from @zama-fhe/tfhe-js (npm package)
-    // or directly from tfhe-rs builds
-    let tfhe;
-    try {
-      tfhe = await import('@zama-fhe/tfhe-js');
-    } catch (e) {
-      console.error('[TFHE] Failed to import @zama-fhe/tfhe-js. Install with: pnpm add @zama-fhe/tfhe-js');
-      throw new Error('TFHE.js package not installed. Run: pnpm add @zama-fhe/tfhe-js');
+    // Dynamic import to load WASM module at runtime
+    const tfheModuleImport = await import('@zama-fhe/tfhe-js') as any;
+    
+    // Extract initSDK and TFHERs from the module
+    const initSDK = tfheModuleImport.initSDK;
+    const TFHERs = tfheModuleImport.TFHERs;
+    
+    if (typeof initSDK !== 'function') {
+      console.error('[TFHE] initSDK is not a function', Object.keys(tfheModuleImport));
+      throw new Error('initSDK export is not a function. Package may not be properly installed.');
     }
     
     // Initialize WASM module
-    console.log('[TFHE] Calling init()...');
-    await tfhe.init();
+    console.log('[TFHE] Calling initSDK()...');
+    await initSDK();
     
-    // Initialize thread pool for parallel operations (if available)
-    if (typeof navigator !== 'undefined' && tfhe.initThreadPool) {
-      console.log('[TFHE] Initializing thread pool...');
-      await tfhe.initThreadPool(navigator.hardwareConcurrency || 4);
-    }
-    
-    // Enable panic hook for better error messages
-    if (tfhe.init_panic_hook) {
-      tfhe.init_panic_hook();
-    }
-    
-    tfheModule = tfhe as any;
+    // Store the WASM module reference
+    tfheModule = TFHERs;
     tfheReady = true;
     
     console.log('[TFHE] WASM module ready for encryption');

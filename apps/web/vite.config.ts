@@ -14,10 +14,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       external: [
-        // @zama-fhe/tfhe-js is loaded dynamically at runtime
-        // It's included via CDN in index.html, not as an npm package
-        // Mark as external to prevent build errors
-        '@zama-fhe/tfhe-js',
+        // External modules that are loaded at runtime
+        // (none currently - @zama-fhe/tfhe-js is bundled from npm)
       ],
     },
   },
