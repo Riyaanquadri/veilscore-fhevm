@@ -148,8 +148,8 @@ export default function InputForm() {
                 onChange={(e) => setTwitterHandle(e.target.value)}
               />
             </div>
-            {normalizedFollowers > 0 && (
-              <div className="badge">Normalized followers: {normalizedFollowers.toLocaleString()}</div>
+            {followers > 0 && (
+              <div className="badge">Followers: {followers.toLocaleString()}</div>
             )}
           </div>
           <div className="input-group-with-badge">
@@ -162,7 +162,7 @@ export default function InputForm() {
                 onChange={(e) => setWalletAddress(e.target.value)}
               />
             </div>
-            {normalizedTxCount > 0 && <div className="badge">Normalized transactions: {normalizedTxCount}</div>}
+            {txCount > 0 && <div className="badge">Transactions: {txCount.toLocaleString()}</div>}
           </div>
         </div>
 
