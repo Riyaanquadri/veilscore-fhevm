@@ -6,14 +6,14 @@ describe("VeilScore", function () {
     const [owner] = await ethers.getSigners();
     const VeilScore = await ethers.getContractFactory("VeilScore");
     const veilScore = await VeilScore.deploy();
-    await veilScore.deployed();
+    await veilScore.waitForDeployment();
 
-    const commitment = ethers.utils.formatBytes32String("commit-1");
+    const commitment = ethers.encodeBytes32String("commit-1");
     await veilScore.connect(owner).submit(commitment, true);
 
     const [storedCommitment, allowed, timestamp] = await veilScore.getEntry(owner.address);
     expect(storedCommitment).to.equal(commitment);
     expect(allowed).to.equal(true);
-    expect(timestamp).to.be.gt(0);
+    expect(timestamp).to.be.gt(0n);
   });
 });
