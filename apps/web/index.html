@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <title>VeilScore FHEVM Demo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Setup CommonJS globals for TFHE WASM module compatibility -->
+    <script>
+      window.exports = {};
+      window.module = { exports: window.exports };
+      if (typeof window.global === 'undefined') {
+        window.global = window;
+      }
+    </script>
     <!-- Zama Relayer SDK for FHEVM -->
     <script src="https://cdn.zama.org/relayer-sdk/relayer-sdk.latest.js"></script>
   </head>
@@ -12,3 +20,4 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+

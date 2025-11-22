@@ -11,6 +11,21 @@ export default defineConfig({
       allow: [repoRoot],
     },
   },
+  resolve: {
+    // Polyfill for Node.js modules needed by @zama-fhe/tfhe-js in browser
+    alias: {
+      buffer: 'buffer',
+    },
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      // Handle ESM/CommonJS interop for TFHE WASM
+      define: {
+        global: 'globalThis',
+      },
+    },
+    include: ['@zama-fhe/tfhe-js'],
+  },
   build: {
     rollupOptions: {
       external: [
