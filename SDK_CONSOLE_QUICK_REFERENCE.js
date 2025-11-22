@@ -14,17 +14,17 @@ await window.relayerSDK.initSDK({ env: 'sepolia' })
 window.relayerSDK.config
 
 // 4. GET ALL ADDRESSES AT ONCE
-const cfg = window.relayerSDK.config || {};
+const config = window.relayerSDK.config || {};
 console.table({
-  'ACL': cfg.aclContractAddress,
-  'KMS': cfg.kmsContractAddress,
-  'InputVerifier': cfg.inputVerifierContractAddress,
-  'DecryptionVerifier': cfg.verifyingContractAddressDecryption,
-  'InputVerificationGateway': cfg.verifyingContractAddressInputVerification,
-  'RelayerURL': cfg.relayerUrl,
-  'RPC': cfg.network,
-  'ChainId': cfg.chainId,
-  'GatewayChainId': cfg.gatewayChainId,
+  'ACL': config.aclContractAddress,
+  'KMS': config.kmsContractAddress,
+  'InputVerifier': config.inputVerifierContractAddress,
+  'DecryptionVerifier': config.verifyingContractAddressDecryption,
+  'InputVerificationGateway': config.verifyingContractAddressInputVerification,
+  'RelayerURL': config.relayerUrl,
+  'RPC': config.network,
+  'ChainId': config.chainId,
+  'GatewayChainId': config.gatewayChainId,
 })
 
 // 5. CHECK FOR SEPOLIACONFIG EXPORT
@@ -32,15 +32,15 @@ window.relayerSDK.SepoliaConfig
 
 // 6. QUICK SUMMARY (ALL-IN-ONE)
 await window.relayerSDK.initSDK({ env: 'sepolia' });
-const cfg = window.relayerSDK.config || {};
+const summary = window.relayerSDK.config || {};
 console.log('=== RELAYER SDK CONFIG ===');
-console.log('ACL:', cfg.aclContractAddress);
-console.log('KMS:', cfg.kmsContractAddress);
-console.log('InputVerifier:', cfg.inputVerifierContractAddress);
-console.log('Relayer:', cfg.relayerUrl);
-console.log('ChainId:', cfg.chainId);
-console.log('GatewayChainId:', cfg.gatewayChainId);
-console.log('Network:', cfg.network);
+console.log('ACL:', summary.aclContractAddress);
+console.log('KMS:', summary.kmsContractAddress);
+console.log('InputVerifier:', summary.inputVerifierContractAddress);
+console.log('Relayer:', summary.relayerUrl);
+console.log('ChainId:', summary.chainId);
+console.log('GatewayChainId:', summary.gatewayChainId);
+console.log('Network:', summary.network);
 console.log('SepoliaConfig available:', !!window.relayerSDK.SepoliaConfig);
 
 // EXPECTED VALUES (from relayer-sdk)

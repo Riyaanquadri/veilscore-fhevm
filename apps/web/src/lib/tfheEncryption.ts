@@ -114,7 +114,13 @@ export async function initializeTfheWasm(): Promise<void> {
     
     // Import from @zama-fhe/tfhe-js (npm package)
     // or directly from tfhe-rs builds
-    const tfhe = await import('@zama-fhe/tfhe-js');
+    let tfhe;
+    try {
+      tfhe = await import('@zama-fhe/tfhe-js');
+    } catch (e) {
+      console.error('[TFHE] Failed to import @zama-fhe/tfhe-js. Install with: pnpm add @zama-fhe/tfhe-js');
+      throw new Error('TFHE.js package not installed. Run: pnpm add @zama-fhe/tfhe-js');
+    }
     
     // Initialize WASM module
     console.log('[TFHE] Calling init()...');
@@ -287,7 +293,16 @@ export async function decryptSignalsWithTfhe(
     const clientKey = tfheModule.TfheClientKey.generate(config);
 
     // Deserialize the compact ciphertext list
-    const deserialized = tfheModule.CompactCiphertextList.deserialize(encryptedData);
+    // The TFHE-rs WASM API uses CompactCiphertextList.deserialize or direct import
+    let deserialized: any;
+    const ccl = (tfheModule as any).CompactCiphertextList;
+    if (ccl && typeof ccl.deserialize === 'function') {
+      deserialized = ccl.deserialize(encryptedData);
+    } else if (typeof (tfheModule as any).deserialize === 'function') {
+      deserialized = (tfheModule as any).deserialize(encryptedData);
+    } else {
+      throw new Error('No deserialize method found in TFHE module. Ensure @zama-fhe/tfhe-js is properly installed.');
+    }
 
     // Expand for decryption
     const encrypted = deserialized.expand();
