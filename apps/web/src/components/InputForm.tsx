@@ -1,11 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { normalizeInputs, encryptWithTFHE, callFHECompute } from "../lib/zama";
 import { submitToContract } from "../lib/contract";
 import { fetchSignals, NetworkSource } from "../lib/signals";
+import { useUserHistory } from "../hooks/useUserHistory";
 
 const TIER_LABELS = ["Diamond", "Gold", "Silver", "Bronze", "Unranked"];
 
 export default function InputForm() {
+  const { history, lastEntry, addEntry, clearHistory, removeEntry } = useUserHistory();
+  
   const [followers, setFollowers] = useState<number>(0);
   const [txCount, setTxCount] = useState<number>(0);
   const [normalizedFollowers, setNormalizedFollowers] = useState<number>(0);
@@ -19,6 +22,23 @@ export default function InputForm() {
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bracket, setBracket] = useState<number>(4);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Auto-populate from last entry on mount
+  useEffect(() => {
+    if (lastEntry) {
+      console.log('[InputForm] Auto-populating from last entry:', {
+        twitterHandle: lastEntry.twitterHandle,
+        walletAddress: lastEntry.walletAddress,
+      });
+      setTwitterHandle(lastEntry.twitterHandle);
+      setWalletAddress(lastEntry.walletAddress);
+      
+      // Also restore previous results if available
+      if (lastEntry.followers) setFollowers(lastEntry.followers);
+      if (lastEntry.txCount) setTxCount(lastEntry.txCount);
+    }
+  }, [lastEntry]);
 
   const fetchAndHydrateSignals = async () => {
     if (!twitterHandle && !walletAddress) {
@@ -84,6 +104,15 @@ export default function InputForm() {
       await submitToContract(commitment, result.allowed);
       setAllowed(result.allowed);
       setStatus("Commitment + boolean stored on-chain.");
+      
+      // Save to history after successful computation
+      addEntry({
+        twitterHandle,
+        walletAddress,
+        followers: effectiveFollowers,
+        txCount: effectiveTxCount,
+        tier: TIER_LABELS[effectiveBracket] || 'Unranked',
+      });
     } catch (e: any) {
       console.error(e);
       setError(e.message || "Unexpected error");
@@ -206,6 +235,81 @@ export default function InputForm() {
         )}
 
         {error && <div className="error-box">{error}</div>}
+
+        {/* History Section */}
+        {history.length > 0 && (
+          <div className="history-section">
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="history-toggle"
+              type="button"
+            >
+              {showHistory ? "▼" : "▶"} History ({history.length})
+            </button>
+
+            {showHistory && (
+              <div className="history-container">
+                {history.map((entry, index) => (
+                  <div key={`${entry.timestamp}-${index}`} className="history-item">
+                    <div className="history-item-content">
+                      <div className="history-handle">
+                        {entry.twitterHandle && (
+                          <span className="history-badge twitter">@{entry.twitterHandle}</span>
+                        )}
+                        {entry.walletAddress && (
+                          <span className="history-badge wallet">
+                            {entry.walletAddress.substring(0, 6)}...{entry.walletAddress.substring(-4)}
+                          </span>
+                        )}
+                      </div>
+                      {entry.tier && (
+                        <div className="history-tier">Tier: <strong>{entry.tier}</strong></div>
+                      )}
+                      {entry.followers && (
+                        <div className="history-stats">
+                          Followers: {entry.followers.toLocaleString()} | TX: {entry.txCount?.toLocaleString()}
+                        </div>
+                      )}
+                      <div className="history-time">
+                        {new Date(entry.timestamp).toLocaleDateString()} {new Date(entry.timestamp).toLocaleTimeString()}
+                      </div>
+                    </div>
+                    <div className="history-actions">
+                      <button
+                        onClick={() => {
+                          setTwitterHandle(entry.twitterHandle);
+                          setWalletAddress(entry.walletAddress);
+                          setShowHistory(false);
+                        }}
+                        className="history-btn-load"
+                        title="Load this entry"
+                      >
+                        Load
+                      </button>
+                      <button
+                        onClick={() => removeEntry(index)}
+                        className="history-btn-delete"
+                        title="Delete this entry"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <button
+                  onClick={() => {
+                    if (confirm("Clear all history?")) {
+                      clearHistory();
+                    }
+                  }}
+                  className="history-clear-btn"
+                >
+                  Clear All History
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
     </div>
   );
