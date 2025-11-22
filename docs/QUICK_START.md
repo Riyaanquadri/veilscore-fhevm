@@ -1,33 +1,101 @@
 # Quick Start: Deploy VeilScore to Sepolia
 
-## Prerequisites ✓
+## Local Development Prerequisites ✓
 
-- [ ] Node.js 18+, pnpm installed
-- [ ] Infura/Alchemy account with Sepolia RPC endpoint
-- [ ] Funded Sepolia account (get ETH from [faucet](https://www.infura.io/faucet/sepolia))
-- [ ] `.env` file with required variables (see `.env.example`)
+- Node.js 18+, pnpm installed
+- (Optional) Funded Sepolia account for testnet deployment
+- `.env` file with required variables (see `.env.example`)
 
-## 1-Minute Setup
-
-```bash
-# Copy template
-cp .env.example .env
-
-# Edit .env and add:
-# DEPLOYER_PRIVATE_KEY=0x...
-# SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/...
-# TWITTER_BEARER_TOKEN=...
-```
-
-## Deploy (5 minutes)
+## Running Locally (5 minutes)
 
 ```bash
-# Install
+# 1. Install dependencies
 pnpm install
 
-# Deploy contract
-npx hardhat run scripts/deploy.ts --network sepolia
+# 2. Copy environment template
+cp .env.example .env
 
+# 3. Edit .env and update:
+# VITE_VEILSCORE_ADDRESS=0x...        # Will get from deployment
+# VITE_API_BASE_URL=http://localhost:4000
+# TWITTER_BEARER_TOKEN=...             # For signal fetching
+```
+
+## Start Local Stack
+
+### Terminal 1: Hardhat Node
+```bash
+npx hardhat node
+```
+
+### Terminal 2: Deploy Contract
+```bash
+npx hardhat run scripts/deploy.ts --network localhost
+# Copy the deployed address and update .env
+```
+
+### Terminal 3: Backend
+```bash
+pnpm server:dev
+# Runs on http://localhost:4000
+```
+
+### Terminal 4: Frontend
+```bash
+pnpm dev
+# Runs on http://localhost:5173
+# Check browser console for initialization logs
+```
+
+## Troubleshooting SDK Initialization
+
+### ⚠️ Error: TFHE WASM Initialization Failed
+
+**What was fixed**: 
+- TFHE package uses `initSDK({})` not `init()`
+- Proper error handling with diagnostic logging
+
+**If you still see errors**:
+
+1. **Clear cache and reinstall**:
+   ```bash
+   cd apps/web
+   rm -rf node_modules package-lock.yaml pnpm-lock.yaml
+   pnpm install
+   ```
+
+2. **Hard refresh browser**:
+   - macOS: Cmd+Shift+Delete
+   - Windows/Linux: Ctrl+Shift+Delete
+
+3. **Check browser console** for messages like:
+   ```
+   [TFHE] ✅ TFHE WASM module successfully initialized
+   ```
+
+### ⚠️ Error: Relayer SDK Not Found
+
+**Fix**: Ensure `index.html` includes CDN script
+```html
+<script src="https://cdn.zama.org/relayer-sdk/relayer-sdk.latest.js"></script>
+```
+
+### ⚠️ Error: Cannot Find VeilScore Contract
+
+**Fix**: Update `.env` with deployed address
+```bash
+VITE_VEILSCORE_ADDRESS=0x<address_from_terminal_2>
+```
+
+## Deploy to Sepolia (Optional)
+
+Prerequisites ✓
+
+- [ ] Infura/Alchemy account with Sepolia RPC endpoint
+- [ ] Funded Sepolia account (get ETH from [faucet](https://www.infura.io/faucet/sepolia))
+- [ ] Private key in `.env` as `DEPLOYER_PRIVATE_KEY`
+
+### Deploy Steps
 # Save the contract address, then update .env:
 # VITE_VEILSCORE_ADDRESS=0x<from_deploy_output>
 ```

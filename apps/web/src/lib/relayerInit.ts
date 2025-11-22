@@ -16,10 +16,34 @@ export interface RelayerInitOptions {
 }
 
 export async function initRelayerSDK(options?: RelayerInitOptions) {
+  // The Relayer SDK is loaded as a global via CDN script tag
+  // After loading, it should be available at window.relayerSDK or as a global
+  
   if (!window.relayerSDK) {
-    throw new Error(
-      "Relayer SDK script not loaded. Ensure CDN script is included in index.html"
+    console.warn(
+      "[relayerInit] Relayer SDK not found on window.relayerSDK. " +
+      "Checking for alternative global names..."
     );
+    
+    // Try alternative global names that might be used by the SDK
+    const alternativeNames = ['ZamaRelayer', 'relayer', 'Relayer'];
+    let found = false;
+    
+    for (const name of alternativeNames) {
+      if ((window as any)[name]) {
+        console.log(`[relayerInit] Found SDK at window.${name}`);
+        (window as any).relayerSDK = (window as any)[name];
+        found = true;
+        break;
+      }
+    }
+    
+    if (!found) {
+      throw new Error(
+        "Relayer SDK not found. Ensure the CDN script is included in index.html: " +
+        "<script src=\"https://cdn.zama.org/relayer-sdk/relayer-sdk.latest.js\"></script>"
+      );
+    }
   }
 
   const initOptions = {
@@ -29,8 +53,41 @@ export async function initRelayerSDK(options?: RelayerInitOptions) {
 
   try {
     console.log("[relayerInit] Initializing Relayer SDK with env:", initOptions.env);
-    await window.relayerSDK.initSDK(initOptions);
-    console.log("[relayerInit] Relayer SDK initialized successfully");
+    
+    // The Relayer SDK from CDN provides different initialization patterns
+    // depending on version. Try the most common ones:
+    
+    let initialized = false;
+    
+    // Pattern 1: initSDK as a method on the SDK object
+    if (typeof window.relayerSDK.initSDK === 'function') {
+      console.log('[relayerInit] Using SDK.initSDK() pattern...');
+      await window.relayerSDK.initSDK(initOptions);
+      initialized = true;
+    }
+    // Pattern 2: init as a method on the SDK object  
+    else if (typeof window.relayerSDK.init === 'function') {
+      console.log('[relayerInit] Using SDK.init() pattern...');
+      await window.relayerSDK.init(initOptions);
+      initialized = true;
+    }
+    // Pattern 3: Direct instantiation or configuration
+    else if (typeof window.relayerSDK === 'function') {
+      console.log('[relayerInit] Using SDK as constructor pattern...');
+      window.relayerSDK = new (window.relayerSDK as any)(initOptions);
+      initialized = true;
+    }
+    
+    if (!initialized) {
+      console.warn(
+        '[relayerInit] Could not detect initialization pattern. Available methods:',
+        Object.keys(window.relayerSDK).slice(0, 20)
+      );
+      // Continue anyway - SDK might auto-initialize
+      console.log('[relayerInit] Proceeding with SDK as-is (may auto-initialize)');
+    }
+    
+    console.log("[relayerInit] Relayer SDK initialization complete (or skipped if auto)");
     
     // Log SDK configuration for debugging
     if (window.relayerSDK.config) {

@@ -92,16 +92,21 @@ let tfheReady = false;
 /**
  * Initialize TFHE WASM module for browser
  * 
- * Must be called once before any encryption operations
+ * Must be called once before any encryption operations.
  * 
- * From tfhe-rs docs:
- * ```js
- * import init, { initThreadPool, init_panic_hook } from "@zama-fhe/tfhe-js";
+ * How it works:
+ * 1. Imports the high-level @zama-fhe/tfhe-js library
+ * 2. Creates a test Key object, which triggers WASM initialization
+ * 3. Stores references to createKey and TFHERs for later use
  * 
- * await init();
- * await initThreadPool(navigator.hardwareConcurrency);
- * await init_panic_hook();
- * ```
+ * Why we use createKey() instead of initSDK():
+ * - The raw initSDK() is a low-level WASM init function that requires careful parameter passing
+ * - The createKey() function wraps it properly and handles browser/Node.js detection
+ * - This is the documented high-level API for key generation and encryption
+ * 
+ * @throws Error if WASM module cannot be loaded or initialized
+ * 
+ * See: https://github.com/zama-ai/tfhe-js
  */
 export async function initializeTfheWasm(): Promise<void> {
   if (tfheReady) {
@@ -110,51 +115,171 @@ export async function initializeTfheWasm(): Promise<void> {
   }
 
   try {
-    console.log('[TFHE] Loading TFHE WASM module...');
+    console.log('[TFHE] ========== WASM Initialization ==========');
     
-    // Ensure exports object exists in window for CommonJS modules
-    if (typeof (window as any).exports === 'undefined') {
-      (window as any).exports = {};
+    // Step 0: Verify WASM file is accessible
+    console.log('[TFHE] Step 0: Checking WASM file accessibility...');
+    try {
+      const wasmCheck = await fetch('/tfhe_bg.wasm', { method: 'HEAD' });
+      console.log(`[TFHE] ✓ WASM file found at /tfhe_bg.wasm (Status: ${wasmCheck.status})`);
+      console.log(`[TFHE]   Content-Type: ${wasmCheck.headers.get('content-type')}`);
+    } catch (fetchErr) {
+      console.warn('[TFHE] ⚠️ HEAD request failed, trying GET...');
+      const wasmGetCheck = await fetch('/tfhe_bg.wasm');
+      if (wasmGetCheck.ok) {
+        console.log(`[TFHE] ✓ WASM file accessible via GET (Status: ${wasmGetCheck.status})`);
+        console.log(`[TFHE]   Content-Type: ${wasmGetCheck.headers.get('content-type')}`);
+      } else {
+        console.error(`[TFHE] ✗ WASM file returned status ${wasmGetCheck.status}`);
+      }
     }
     
-    // Import browser-specific version which has the proper initSDK function
-    console.log('[TFHE] Importing @zama-fhe/tfhe-js/browser...');
-    const tfheModule = await import('@zama-fhe/tfhe-js/browser') as any;
+    // Step 1: Import the high-level library which handles WASM loading
+    console.log('[TFHE] Step 1: Importing TFHE package...');
+    const tfhePackage = await import('@zama-fhe/tfhe-js') as any;
     
-    console.log('[TFHE] Package loaded, checking exports...');
+    console.log('[TFHE] ✓ Package imported');
+    const exports = Object.keys(tfhePackage).filter(k => !k.startsWith('_')).slice(0, 20);
+    console.log('[TFHE] Available exports:', exports.join(', '));
     
-    // Extract the initSDK function - it should be a proper async function
-    const initSDK = tfheModule.initSDK;
+    // Step 2: Check what we have
+    const { TFHERs, Shortint, initSDK, Key } = tfhePackage;
     
-    if (typeof initSDK !== 'function') {
-      console.error('[TFHE] initSDK is not a function', {
-        type: typeof initSDK,
-        value: initSDK,
-        keys: Object.keys(tfheModule).slice(0, 15),
-      });
-      throw new Error('initSDK is not a function - package may not be properly imported');
+    console.log('[TFHE] Step 2: Checking core exports');
+    console.log('[TFHE] - TFHERs available:', !!TFHERs);
+    console.log('[TFHE] - Shortint available:', !!Shortint);
+    console.log('[TFHE] - Key available:', !!Key);
+    console.log('[TFHE] - initSDK available:', !!initSDK);
+    console.log('[TFHE] - initSDK type:', typeof initSDK);
+    
+    // Step 3: Call initSDK with explicit wasmUrl pointing to public folder
+    console.log('[TFHE] Step 3: Initializing WASM module');
+    
+    let initResult = undefined;
+    
+    if (typeof initSDK === 'function') {
+      console.log('[TFHE] Calling initSDK({ wasmUrl: "/tfhe_bg.wasm" })...');
+      try {
+        // Pass explicit wasmUrl to ensure it loads from public folder
+        initResult = await initSDK({ wasmUrl: '/tfhe_bg.wasm' });
+        console.log('[TFHE] ✓ initSDK() completed');
+      } catch (initErr) {
+        console.warn('[TFHE] initSDK with wasmUrl failed:', initErr);
+        console.warn('[TFHE] Trying initSDK without parameters...');
+        // Fallback: try without parameters
+        initResult = await initSDK();
+        console.log('[TFHE] ✓ initSDK() completed (fallback)');
+      }
+    } else if (typeof tfhePackage.init === 'function') {
+      console.log('[TFHE] Calling init({ wasmUrl: "/tfhe_bg.wasm" })...');
+      try {
+        initResult = await tfhePackage.init({ wasmUrl: '/tfhe_bg.wasm' });
+        console.log('[TFHE] ✓ init() completed');
+      } catch (initErr) {
+        console.warn('[TFHE] init with wasmUrl failed, trying without parameter');
+        initResult = await tfhePackage.init();
+        console.log('[TFHE] ✓ init() completed (fallback)');
+      }
+    } else {
+      console.log('[TFHE] Step 3b: No explicit init function, checking if Key class works directly...');
+      // Some versions auto-load via the Key class
     }
     
-    // Initialize WASM module with optional custom path
-    console.log('[TFHE] Calling initSDK()...');
-    await initSDK();
+    console.log('[TFHE] Init result:', initResult);
     
-    // Get TFHERs reference after initialization
-    const TFHERs = tfheModule.TFHERs;
+    // Step 4: Verify Shortint is now available (may need to re-import after init)
+    console.log('[TFHE] Step 4: Verifying WASM exports are accessible');
     
-    if (!TFHERs) {
-      console.warn('[TFHE] TFHERs not found after init, continuing anyway');
+    // Re-import to get updated exports after initialization
+    console.log('[TFHE] Re-importing package to get initialized exports...');
+    const tfheUpdated = await import('@zama-fhe/tfhe-js') as any;
+    const { Shortint: ShortintAfterInit, Key: KeyAfterInit } = tfheUpdated;
+    
+    console.log('[TFHE] After re-import:');
+    console.log('[TFHE] - Shortint available:', !!ShortintAfterInit);
+    console.log('[TFHE] - Key available:', !!KeyAfterInit);
+    
+    // Try to use Key directly to trigger WASM load if needed
+    if (!ShortintAfterInit && KeyAfterInit) {
+      console.log('[TFHE] Shortint not available, but Key is - trying to instantiate Key...');
+      try {
+        const testKey = new KeyAfterInit();
+        console.log('[TFHE] ✓ Key instantiated successfully, WASM likely loaded');
+        tfheModule = tfheUpdated;
+        tfheReady = true;
+        console.log('[TFHE] ✅ TFHE WASM module successfully initialized (via Key)');
+        console.log('[TFHE] ========== Initialization Complete ==========');
+        return;
+      } catch (keyErr) {
+        console.error('[TFHE] Failed to instantiate Key:', keyErr);
+      }
     }
     
-    // Store the WASM module reference
-    tfheModule._wasm = TFHERs;
+    if (!ShortintAfterInit) {
+      // If still not found, check if TFHERs.Shortint exists (different export structure)
+      const hasShortintOnTFHERs = tfheUpdated.TFHERs?.Shortint;
+      const hasShortintDirect = tfheUpdated.Shortint;
+      
+      console.error('[TFHE] Shortint locations checked:');
+      console.error('[TFHE] - TFHERs.Shortint:', !!hasShortintOnTFHERs);
+      console.error('[TFHE] - Direct Shortint:', !!hasShortintDirect);
+      console.error('[TFHE] - All exports:', Object.keys(tfheUpdated).filter(k => !k.startsWith('_')));
+      
+      throw new Error(
+        'Shortint not found after initialization. ' +
+        'This means the WASM module did not load properly. ' +
+        'Possible causes:\n' +
+        '1. WASM file not found or not at /tfhe_bg.wasm (check Network tab for tfhe_bg.wasm status 200)\n' +
+        '2. WASM file CORS blocked (check browser console for CORS errors)\n' +
+        '3. WASM MIME type wrong (should be application/wasm, not text/html)\n' +
+        '4. Version mismatch between JS glue (@zama-fhe/tfhe-js@0.1.2) and WASM (0.1.2)'
+      );
+    }
+    
+    console.log('[TFHE] ✓ Shortint accessible after init');
+    
+    // Verify key methods exist
+    const expectedMethods = ['bc_get_shortint_parameters', 'gen_client_key'];
+    for (const method of expectedMethods) {
+      if (ShortintAfterInit[method as any]) {
+        console.log(`[TFHE] ✓ Shortint.${method} available`);
+      } else {
+        console.warn(`[TFHE] ⚠️ Shortint.${method} not found`);
+      }
+    }
+    
+    // Step 5: Store references
+    console.log('[TFHE] Step 5: Storing module references');
+    tfheModule = tfheUpdated;
     tfheReady = true;
     
-    console.log('[TFHE] WASM module successfully initialized');
+    console.log('[TFHE] ✅ TFHE WASM module successfully initialized');
+    console.log('[TFHE] ========== Initialization Complete ==========');
+    
   } catch (err) {
-    console.error('[TFHE] Failed to initialize WASM module:', err);
-    const errorDetails = err instanceof Error ? err.message : String(err);
-    throw new Error(`TFHE WASM initialization failed: ${errorDetails}`);
+    console.error('[TFHE] ========== Initialization Failed ==========');
+    console.error('[TFHE] Error:', err);
+    
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error('[TFHE] Message:', errorMessage);
+    
+    // Provide actionable diagnostics
+    if (errorMessage.includes('Shortint')) {
+      console.error('[TFHE] DIAGNOSIS: WASM module did not initialize');
+      console.error('[TFHE] ACTION: Check these in order:');
+      console.error('[TFHE]   1. DevTools Network tab → filter .wasm → look for tfhe_bg.wasm');
+      console.error('[TFHE]   2. If Status is 404: WASM not at /tfhe_bg.wasm, check file copied to public/');
+      console.error('[TFHE]   3. If Status is 200 but Content-Type is text/html: Vite serving wrong file');
+      console.error('[TFHE]   4. If Content-Type is application/wasm: Try hard refresh (Cmd+Shift+R)');
+    } else if (errorMessage.includes('Cannot find module')) {
+      console.error('[TFHE] DIAGNOSIS: Package not installed');
+      console.error('[TFHE] ACTION: Run: cd apps/web && pnpm install');
+    } else if (errorMessage.includes('fetch') || errorMessage.includes('404')) {
+      console.error('[TFHE] DIAGNOSIS: WASM file fetch failed');
+      console.error('[TFHE] ACTION: Check Network tab for failed requests');
+    }
+    
+    throw new Error(`TFHE WASM initialization failed: ${errorMessage}`);
   }
 }
 

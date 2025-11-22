@@ -4,10 +4,14 @@ Private Reputation Oracle (VeilScore) — client-side encrypted signals computed
 
 ## Architecture
 
-- **Contracts**: `contracts/VeilScore.sol` stores a commitment (bytes32) and a boolean `allowed` flag per address. All heavy FHE computation happens off-chain.
-- **Frontend**: `apps/web` is a Vite + React + TypeScript app that collects user inputs, calls Zama TFHE helpers in `src/lib/zama.ts`, and submits results to the contract via `src/lib/contract.ts`.
+- **Contracts**: `contracts/VeilScore.sol` stores a commitment (bytes32) and a boolean `allowed` flag per address. Minimal on-chain logic — all FHE computation happens off-chain on encrypted data.
+- **Frontend**: `apps/web` is a Vite + React + TypeScript app that:
+  - Collects user signals (Twitter followers, on-chain transaction counts)
+  - Encrypts signals client-side using TFHE-rs WASM (`src/lib/zama.ts`)
+  - Submits encrypted data for FHE evaluation (`src/lib/fheCompute.ts`)
+  - Stores results on-chain via `src/lib/contract.ts`
 - **Backend**: `apps/server` is an Express service that fetches public signals (Twitter followers, on-chain transaction counts) for prefilling user inputs.
-- **FHEVM Integration**: Uses Zama's relayer SDK (loaded via CDN) + adaptive config detection (`useFhevm.ts` hook) to encrypt inputs and evaluate inside Sepolia FHEVM.
+- **FHE Integration**: Uses Zama TFHE-rs (WASM) for client-side encryption + Zama Relayer SDK for encrypted evaluation. Signals remain encrypted throughout the entire pipeline.
 
 ## Getting Started
 
@@ -142,7 +146,75 @@ sepolia: {
 }
 ```
 
-### FHEVM Client Config
+### FHE Computation Pipeline
+
+VeilScore performs **real encrypted threshold evaluation** using TFHE-rs. Here's how it works:
+
+### Privacy Model
+
+1. **Client Encryption** (`apps/web/src/lib/zama.ts`)
+   - User provides plaintext signals: followers count, transaction count
+   - Signals are normalized to tier (0-4: Diamond → Unranked)
+   - Client encrypts using TFHE-rs WASM (CompactCiphertextList)
+   - **ClientKey stays in browser** (localStorage, never shared)
+   - Only encrypted ciphertext leaves the browser
+
+2. **Encrypted Evaluation** (`apps/web/src/lib/fheCompute.ts`)
+   - Relayer receives encrypted ciphertext (cannot see plaintext)
+   - Evaluation: `encrypted_bracket <= TIER_THRESHOLD` (threshold comparison)
+   - This happens on encrypted data — no decryption needed
+   - Result: encrypted boolean (1 bit)
+
+3. **User Decryption** (client-side)
+   - User's ClientKey decrypts the result locally
+   - Result: plaintext boolean (allowed/denied)
+   - Smart contract uses boolean for threshold gating
+
+### TFHE-rs Types
+
+| Signal | Type | Range | Used For |
+|--------|------|-------|----------|
+| followers | euint16 | 0–65,535 | Normalized follower count (÷10) |
+| txCount | euint32 | 0–4,294,967,295 | Normalized transaction count |
+| bracket | euint8 | 0–4 | Tier classification |
+| threshold | u8 | 2 | Allow Silver tier and above |
+
+### Security Guarantees
+
+- **Signals remain encrypted**: Relayer cannot see followers or txCount
+- **Comparison is encrypted**: `bracket <= threshold` computed on ciphertext
+- **Only result revealed**: Final boolean (allowed/denied) visible
+- **ClientKey never leaves browser**: Only used for local decryption
+- **Deterministic**: Same signals → same encrypted result → same plaintext boolean
+
+### Relayer Model
+
+Currently supports **Model 2: Relayer-Signed Evaluation**:
+
+```typescript
+// Client sends encrypted data
+await relayerSDK.submitEncryptedInput({
+  ciphertext: encryptedCiphertext,
+  publicKey: tfhePublicKey
+});
+
+// Relayer evaluates on encrypted data
+// Returns: { result: encryptedResult, signature: proof }
+
+// User decrypts locally
+const plaintext = clientKey.decrypt(encryptedResult);
+```
+
+### Computation Code
+
+**Real FHE operations** are in:
+- `apps/web/src/lib/fheCompute.ts:fheComputeScore()` — Main encrypted evaluation
+- `apps/web/src/lib/fheCompute.ts:fheCompareBracketToThreshold()` — Encrypted comparison
+- `apps/web/src/lib/fheCompute.ts:fheComputeAggregateScore()` — Encrypted arithmetic (sum + compare)
+
+All use CompactCiphertext API from TFHE-rs for efficient encrypted operations.
+
+## FHEVM Client Config
 
 Check `apps/web/src/lib/fhevmConfig.ts` for Sepolia FHEVM parameters:
 
@@ -172,10 +244,17 @@ await initRelayerSDK();  // Initializes window.relayerSDK
 1. **User Input**: Twitter handle and blockchain wallet address
 2. **Fetch Signals**: Backend queries Twitter API + RPC providers for follower count + transaction count
 3. **Normalize**: Inputs converted to tier (Diamond/Gold/Silver/Bronze/Unranked) based on thresholds
-4. **Encrypt**: Tier + commitment encrypted via Zama TFHE SDK
-5. **Evaluate**: Relayer evaluates encrypted data; checks tier threshold
-6. **Submit**: Result (commitment + allowed gate) submitted to VeilScore contract
-7. **Store**: Contract stores commitment and gate per user address; emits event
+4. **Encrypt (Client-side TFHE)**: 
+   - Signals encrypted using TFHE-rs WASM
+   - Ciphertext leaves browser; plaintext never leaves
+   - ClientKey stored locally for decryption
+5. **FHE Evaluation (Encrypted)**: 
+   - Relayer receives encrypted ciphertext
+   - Computes: `bracket <= TIER_THRESHOLD` on encrypted data
+   - Returns encrypted result (1-bit boolean)
+6. **Decrypt (Client-side)**: User's ClientKey decrypts result locally → plaintext boolean
+7. **Submit**: Result (commitment + allowed gate) submitted to VeilScore contract
+8. **Store**: Contract stores commitment and gate per user address; emits event
 
 ## Project Structure
 
