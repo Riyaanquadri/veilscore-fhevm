@@ -1,12 +1,14 @@
 /**
  * useFhevm.ts
  * React hook to manage FHEVM instance lifecycle and initialization
- * Based on Zama's relayer SDK patterns
+ * 
+ * Integrates with Zama Relayer SDK using official Sepolia network configuration
+ * See: https://github.com/zama-ai/relayer-sdk
  */
 
 import { useEffect, useRef, useState } from "react";
 import { initRelayerSDK, isRelayerSDKReady } from "./relayerInit";
-import { SEPOLIA_FHEVM_CONFIG } from "./fhevmConfig";
+import { ZAMA_SEPOLIA_CONFIG } from "./fhevmNetworkConfig";
 
 export type FhevmStatus = "idle" | "loading" | "ready" | "error";
 
@@ -17,11 +19,32 @@ export interface UseFhevmReturn {
   refresh: () => void;
 }
 
-// Mock chains mapping: chainId => RPC URL
+/**
+ * Mock chains mapping for local testing
+ * Maps chain IDs to RPC URLs for SDK compatibility
+ */
 const MOCK_CHAINS: Record<number, string> = {
-  11155111: process.env.VITE_SEPOLIA_RPC_URL || "https://sepolia.infura.io/v3/YOUR_PROJECT_ID",
+  11155111: process.env.VITE_FHEVM_RPC_URL || ZAMA_SEPOLIA_CONFIG.network,
+  31337: "http://localhost:8545", // Local Hardhat node for development
 };
 
+/**
+ * Hook to initialize and manage FHEVM instance
+ * 
+ * Flow:
+ * 1. Initialize Relayer SDK (if not already done)
+ * 2. Check if SDK has built-in SepoliaConfig
+ * 3. If yes, use SDK's config (preferred)
+ * 4. If no, use our fhevmNetworkConfig (fallback)
+ * 5. Create FHEVM instance and return
+ * 
+ * Extracted Zama SDK config:
+ * - ACL: 0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D
+ * - KMS: 0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A
+ * - InputVerifier: 0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0
+ * - RelayerUrl: https://relayer.testnet.zama.org
+ * - ChainId: 11155111 (Sepolia)
+ */
 export function useFhevm(): UseFhevmReturn {
   const [instance, setInstance] = useState<any | undefined>(undefined);
   const [status, setStatus] = useState<FhevmStatus>("idle");
@@ -62,27 +85,33 @@ export function useFhevm(): UseFhevmReturn {
         console.log("[useFhevm] Creating FHEVM instance with Sepolia config...");
         const sdk = window.relayerSDK;
 
-        // Check if SDK provides built-in Sepolia config
+        // Check if SDK provides built-in Sepolia config (preferred)
         const hasSepoliaConfig = sdk.SepoliaConfig && sdk.SepoliaConfig.aclContractAddress;
         console.log("[useFhevm] SDK has built-in SepoliaConfig:", hasSepoliaConfig);
 
-        // Build instance config
+        // Build instance config, starting with mock chains for SDK compatibility
         const instanceConfig: any = {
-          provider: SEPOLIA_FHEVM_CONFIG.rpcUrl,
-          mockChains: MOCK_CHAINS, // Maps 11155111 to RPC URL if SDK needs it
+          mockChains: MOCK_CHAINS,
         };
 
-        // Use SDK's SepoliaConfig if available, otherwise provide manual overrides
+        // Use SDK's SepoliaConfig if available (from relayer-sdk/src/index.ts)
         if (hasSepoliaConfig) {
-          console.log("[useFhevm] Using SDK's built-in SepoliaConfig");
+          console.log("[useFhevm] Using SDK's built-in SepoliaConfig from Relayer SDK");
+          // SDK's SepoliaConfig includes all required contract addresses
           Object.assign(instanceConfig, sdk.SepoliaConfig);
+          console.log("[useFhevm] SDK config addresses:", {
+            acl: sdk.SepoliaConfig.aclContractAddress,
+            relayerUrl: sdk.SepoliaConfig.relayerUrl,
+          });
         } else {
-          console.log("[useFhevm] Using manual Sepolia config (SDK lacks built-in)");
-          instanceConfig.chainId = SEPOLIA_FHEVM_CONFIG.chainId;
-          instanceConfig.aclContractAddress = SEPOLIA_FHEVM_CONFIG.aclContractAddress;
-          instanceConfig.inputVerifierAddress = SEPOLIA_FHEVM_CONFIG.inputVerifierAddress;
-          instanceConfig.kmsVerifierAddress = SEPOLIA_FHEVM_CONFIG.kmsVerifierAddress;
-          instanceConfig.publicKeySize = SEPOLIA_FHEVM_CONFIG.publicKeySize;
+          console.log("[useFhevm] Using fallback Zama config from fhevmNetworkConfig.ts");
+          // Fallback: use our extracted config from relayer-sdk repo
+          // See: https://github.com/zama-ai/relayer-sdk/blob/main/src/index.ts (SepoliaConfig)
+          Object.assign(instanceConfig, ZAMA_SEPOLIA_CONFIG);
+          console.log("[useFhevm] Fallback config addresses:", {
+            acl: ZAMA_SEPOLIA_CONFIG.aclContractAddress,
+            relayerUrl: ZAMA_SEPOLIA_CONFIG.relayerUrl,
+          });
         }
 
         const fhevmInstance = await sdk.createInstance(instanceConfig);
@@ -94,7 +123,10 @@ export function useFhevm(): UseFhevmReturn {
 
         setInstance(fhevmInstance);
         setStatus("ready");
-        console.log("[useFhevm] FHEVM instance ready for Sepolia", { chainId: SEPOLIA_FHEVM_CONFIG.chainId });
+        console.log("[useFhevm] FHEVM instance ready for Sepolia", {
+          chainId: instanceConfig.chainId || ZAMA_SEPOLIA_CONFIG.chainId,
+          relayerUrl: instanceConfig.relayerUrl || ZAMA_SEPOLIA_CONFIG.relayerUrl,
+        });
       } catch (err) {
         if (!abortController.signal.aborted) {
           const error = err instanceof Error ? err : new Error(String(err));
