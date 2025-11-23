@@ -15,10 +15,7 @@
 import {
   initializeTfheWasm,
   isTfheReady,
-  generateClientKeys,
-  encryptSignalsWithTfhe,
-  storeClientKeyLocally,
-  retrieveClientKeyLocally,
+  encryptWithTfheAndCommit,
 } from './tfheEncryption';
 import {
   fheComputeScore,
@@ -103,33 +100,12 @@ export async function encryptWithTFHE(normalized: NormalizedInputs): Promise<{
   commitment: string;
 }> {
   try {
-    // Step 1: Initialize TFHE WASM if not already done
-    if (!isTfheReady()) {
-      console.log('[Zama] Initializing TFHE WASM module...');
-      await initializeTfheWasm();
-    }
-
-    // Step 2: Generate or retrieve client keys
-    let clientKey = retrieveClientKeyLocally();
-    if (!clientKey) {
-      console.log('[Zama] Generating new client keys...');
-      clientKey = await generateClientKeys();
-      storeClientKeyLocally(clientKey);
-    }
-
-    // Step 3: Encrypt signals using TFHE-rs
-    console.log('[Zama] Encrypting signals with TFHE...', normalized);
-    const ciphertext = await encryptSignalsWithTfhe(normalized, clientKey);
-
-    // Step 4: Create commitment (SHA-256 hash of plaintext)
-    const encoder = new TextEncoder();
-    const payload = JSON.stringify(normalized);
-    const digest = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
-    const commitment = `0x${Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')}`;
-
-    console.log('[Zama] Encryption complete', {
+    console.log('[Zama] Starting TFHE encryption...', normalized);
+    
+    // Use the new combined encryption function
+    const { ciphertext, commitment } = await encryptWithTfheAndCommit(normalized);
+    
+    console.log('[Zama] ✓ Encryption complete', {
       ciphertextSize: ciphertext.length,
       commitment,
     });

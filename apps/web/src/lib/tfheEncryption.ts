@@ -1,112 +1,37 @@
 /**
- * TFHE Client-Side Encryption Utilities
+ * src/lib/tfheEncryption_new.ts
  * 
- * Implements FHE encryption for browser using TFHE-rs WASM bindings
+ * TFHE Signal Encryption using @zama-fhe/tfhe-js@0.1.2
  * 
- * Source: https://docs.zama.org/guides/js-tfhe
- * WASM API: https://github.com/zama-ai/tfhe-rs/blob/main/tfhe/docs/integration/js-on-wasm-api.md
+ * HIGH-LEVEL API - Uses the Key class from the package
  * 
- * Exports encryption/decryption for VeilScore signal encryption:
- * - followers (uint16)
- * - txCount (uint32)
- * - bracket (uint8)
+ * Key insights:
+ * - @zama-fhe/tfhe-js@0.1.2 provides: createKey(), Key class
+ * - Key.encrypt(bigint): Uint8Array
+ * - Key.decrypt(Uint8Array): bigint
+ * - NO TfheClientKey or TfheConfigBuilder in this version (don't exist!)
+ * - Use createKey() to generate new keys
+ * 
+ * From: https://docs.zama.org/guides/js-tfhe
  */
 
 import type { NormalizedInputs } from './zama';
 
-/**
- * TFHE-rs WASM Types (from tfhe-rs JS bindings)
- * 
- * These are the actual TypeScript types exported by the TFHE-rs WASM package.
- * When `tfhe` npm package is installed, these will be available.
- */
-interface TfheWasmModule {
-  // Initialization
-  init: () => Promise<void>;
-  initThreadPool: (numThreads: number) => Promise<void>;
-  init_panic_hook: () => void;
-
-  // Configuration
-  TfheConfigBuilder: {
-    default: () => ConfigBuilder;
-  };
-  ShortintParametersName: {
-    V1_5_PARAM_MESSAGE_2_CARRY_2_COMPACT_PK_PBS_KS_GAUSSIAN_2M64: string;
-  };
-  ShortintParameters: new (name: string) => ShortintParameters;
-
-  // Key Generation
-  TfheClientKey: {
-    generate: (config: any) => ClientKey;
-  };
-  TfheCompactPublicKey: new (clientKey: ClientKey) => CompactPublicKey;
-
-  // Encryption
-  CompactCiphertextList: {
-    builder: (publicKey: CompactPublicKey) => CiphertextListBuilder;
-  };
+interface EncryptedSignals {
+  followers: Uint8Array;
+  txCount: Uint8Array;
+  bracket: Uint8Array;
 }
 
-interface ConfigBuilder {
-  build: () => any;
-}
-
-interface ShortintParameters {}
-
-interface ClientKey {
-  serialize: () => Uint8Array;
-}
-
-interface CompactPublicKey {}
-
-interface CiphertextListBuilder {
-  push_u8: (value: number) => void;
-  push_u16: (value: number) => void;
-  push_u32: (value: number) => void;
-  build: () => CompactCiphertextList;
-}
-
-interface CompactCiphertextList {
-  serialize: () => Uint8Array;
-  expand: () => ExpandedCiphertextList;
-}
-
-interface ExpandedCiphertextList {
-  len: () => number;
-  get_uint8: (index: number) => EncryptedValue;
-  get_uint16: (index: number) => EncryptedValue;
-  get_uint32: (index: number) => EncryptedValue;
-}
-
-interface EncryptedValue {
-  decrypt: (clientKey: ClientKey) => number;
-}
-
-/**
- * Browser TFHE instance manager
- * Lazy-loads TFHE WASM module and manages lifecycle
- */
-let tfheModule: TfheWasmModule | null = null;
+// Global state
+let tfheModule: any = null;
 let tfheReady = false;
+let clientKey: any = null;
 
 /**
- * Initialize TFHE WASM module for browser
+ * Initialize TFHE WASM module
  * 
- * Must be called once before any encryption operations.
- * 
- * How it works:
- * 1. Imports the high-level @zama-fhe/tfhe-js library
- * 2. Creates a test Key object, which triggers WASM initialization
- * 3. Stores references to createKey and TFHERs for later use
- * 
- * Why we use createKey() instead of initSDK():
- * - The raw initSDK() is a low-level WASM init function that requires careful parameter passing
- * - The createKey() function wraps it properly and handles browser/Node.js detection
- * - This is the documented high-level API for key generation and encryption
- * 
- * @throws Error if WASM module cannot be loaded or initialized
- * 
- * See: https://github.com/zama-ai/tfhe-js
+ * Loads @zama-fhe/tfhe-js and verifies initSDK is available
  */
 export async function initializeTfheWasm(): Promise<void> {
   if (tfheReady) {
@@ -115,455 +40,287 @@ export async function initializeTfheWasm(): Promise<void> {
   }
 
   try {
-    console.log('[TFHE] ========== WASM Initialization ==========');
+    console.log('[TFHE] ========== Initializing TFHE WASM ==========');
     
-    // Step 0: Verify WASM file is accessible
-    console.log('[TFHE] Step 0: Checking WASM file accessibility...');
-    try {
-      const wasmCheck = await fetch('/tfhe_bg.wasm', { method: 'HEAD' });
-      console.log(`[TFHE] ✓ WASM file found at /tfhe_bg.wasm (Status: ${wasmCheck.status})`);
-      console.log(`[TFHE]   Content-Type: ${wasmCheck.headers.get('content-type')}`);
-    } catch (fetchErr) {
-      console.warn('[TFHE] ⚠️ HEAD request failed, trying GET...');
-      const wasmGetCheck = await fetch('/tfhe_bg.wasm');
-      if (wasmGetCheck.ok) {
-        console.log(`[TFHE] ✓ WASM file accessible via GET (Status: ${wasmGetCheck.status})`);
-        console.log(`[TFHE]   Content-Type: ${wasmGetCheck.headers.get('content-type')}`);
-      } else {
-        console.error(`[TFHE] ✗ WASM file returned status ${wasmGetCheck.status}`);
-      }
-    }
-    
-    // Step 1: Import the high-level library which handles WASM loading
-    console.log('[TFHE] Step 1: Importing TFHE package...');
-    const tfhePackage = await import('@zama-fhe/tfhe-js') as any;
+    // Step 1: Import the package
+    console.log('[TFHE] Step 1: Importing @zama-fhe/tfhe-js...');
+    const tfhe = await import('@zama-fhe/tfhe-js') as any;
     
     console.log('[TFHE] ✓ Package imported');
-    const exports = Object.keys(tfhePackage).filter(k => !k.startsWith('_')).slice(0, 20);
+    const exports = Object.keys(tfhe).filter(k => !k.startsWith('_'));
     console.log('[TFHE] Available exports:', exports.join(', '));
     
-    // Step 2: Check what we have
-    const { TFHERs, Shortint, initSDK, Key } = tfhePackage;
+    // Step 2: Verify key functions exist
+    console.log('[TFHE] Step 2: Checking for required functions...');
+    const hasInitSDK = typeof tfhe.initSDK === 'function';
+    const hasCreateKey = typeof tfhe.createKey === 'function';
+    const hasKey = typeof tfhe.Key === 'function';
     
-    console.log('[TFHE] Step 2: Checking core exports');
-    console.log('[TFHE] - TFHERs available:', !!TFHERs);
-    console.log('[TFHE] - Shortint available:', !!Shortint);
-    console.log('[TFHE] - Key available:', !!Key);
-    console.log('[TFHE] - initSDK available:', !!initSDK);
-    console.log('[TFHE] - initSDK type:', typeof initSDK);
+    console.log('[TFHE] - initSDK:', hasInitSDK ? '✓' : '✗');
+    console.log('[TFHE] - createKey:', hasCreateKey ? '✓' : '✗');
+    console.log('[TFHE] - Key class:', hasKey ? '✓' : '✗');
     
-    // Step 3: Call initSDK with explicit wasmUrl pointing to public folder
-    console.log('[TFHE] Step 3: Initializing WASM module');
+    if (!hasCreateKey) {
+      throw new Error('createKey function not found in @zama-fhe/tfhe-js');
+    }
     
-    let initResult = undefined;
-    
-    if (typeof initSDK === 'function') {
-      console.log('[TFHE] Calling initSDK({ wasmUrl: "/tfhe_bg.wasm" })...');
+    // Step 3: Initialize WASM via initSDK
+    console.log('[TFHE] Step 3: Initializing WASM module...');
+    if (hasInitSDK) {
       try {
-        // Pass explicit wasmUrl to ensure it loads from public folder
-        initResult = await initSDK({ wasmUrl: '/tfhe_bg.wasm' });
+        console.log('[TFHE] Calling initSDK()...');
+        await tfhe.initSDK();
         console.log('[TFHE] ✓ initSDK() completed');
-      } catch (initErr) {
-        console.warn('[TFHE] initSDK with wasmUrl failed:', initErr);
-        console.warn('[TFHE] Trying initSDK without parameters...');
-        // Fallback: try without parameters
-        initResult = await initSDK();
-        console.log('[TFHE] ✓ initSDK() completed (fallback)');
-      }
-    } else if (typeof tfhePackage.init === 'function') {
-      console.log('[TFHE] Calling init({ wasmUrl: "/tfhe_bg.wasm" })...');
-      try {
-        initResult = await tfhePackage.init({ wasmUrl: '/tfhe_bg.wasm' });
-        console.log('[TFHE] ✓ init() completed');
-      } catch (initErr) {
-        console.warn('[TFHE] init with wasmUrl failed, trying without parameter');
-        initResult = await tfhePackage.init();
-        console.log('[TFHE] ✓ init() completed (fallback)');
-      }
-    } else {
-      console.log('[TFHE] Step 3b: No explicit init function, checking if Key class works directly...');
-      // Some versions auto-load via the Key class
-    }
-    
-    console.log('[TFHE] Init result:', initResult);
-    
-    // Step 4: Verify Shortint is now available (may need to re-import after init)
-    console.log('[TFHE] Step 4: Verifying WASM exports are accessible');
-    
-    // Re-import to get updated exports after initialization
-    console.log('[TFHE] Re-importing package to get initialized exports...');
-    const tfheUpdated = await import('@zama-fhe/tfhe-js') as any;
-    const { Shortint: ShortintAfterInit, Key: KeyAfterInit } = tfheUpdated;
-    
-    console.log('[TFHE] After re-import:');
-    console.log('[TFHE] - Shortint available:', !!ShortintAfterInit);
-    console.log('[TFHE] - Key available:', !!KeyAfterInit);
-    
-    // Try to use Key directly to trigger WASM load if needed
-    if (!ShortintAfterInit && KeyAfterInit) {
-      console.log('[TFHE] Shortint not available, but Key is - trying to instantiate Key...');
-      try {
-        const testKey = new KeyAfterInit();
-        console.log('[TFHE] ✓ Key instantiated successfully, WASM likely loaded');
-        tfheModule = tfheUpdated;
-        tfheReady = true;
-        console.log('[TFHE] ✅ TFHE WASM module successfully initialized (via Key)');
-        console.log('[TFHE] ========== Initialization Complete ==========');
-        return;
-      } catch (keyErr) {
-        console.error('[TFHE] Failed to instantiate Key:', keyErr);
+      } catch (err) {
+        console.warn('[TFHE] initSDK() call failed:', err);
+        console.log('[TFHE] Continuing anyway - createKey may still work...');
       }
     }
     
-    if (!ShortintAfterInit) {
-      // If still not found, check if TFHERs.Shortint exists (different export structure)
-      const hasShortintOnTFHERs = tfheUpdated.TFHERs?.Shortint;
-      const hasShortintDirect = tfheUpdated.Shortint;
-      
-      console.error('[TFHE] Shortint locations checked:');
-      console.error('[TFHE] - TFHERs.Shortint:', !!hasShortintOnTFHERs);
-      console.error('[TFHE] - Direct Shortint:', !!hasShortintDirect);
-      console.error('[TFHE] - All exports:', Object.keys(tfheUpdated).filter(k => !k.startsWith('_')));
-      
-      throw new Error(
-        'Shortint not found after initialization. ' +
-        'This means the WASM module did not load properly. ' +
-        'Possible causes:\n' +
-        '1. WASM file not found or not at /tfhe_bg.wasm (check Network tab for tfhe_bg.wasm status 200)\n' +
-        '2. WASM file CORS blocked (check browser console for CORS errors)\n' +
-        '3. WASM MIME type wrong (should be application/wasm, not text/html)\n' +
-        '4. Version mismatch between JS glue (@zama-fhe/tfhe-js@0.1.2) and WASM (0.1.2)'
-      );
+    // Step 4: Verify TFHERs namespace is now populated
+    console.log('[TFHE] Step 4: Checking TFHERs namespace after init...');
+    if (tfhe.TFHERs) {
+      const tfhersKeys = Object.keys(tfhe.TFHERs).filter(k => !k.startsWith('_'));
+      console.log('[TFHE] ✓ TFHERs available with', tfhersKeys.length, 'exports');
+      console.log('[TFHE]   Sample exports:', tfhersKeys.slice(0, 5).join(', '));
     }
     
-    console.log('[TFHE] ✓ Shortint accessible after init');
-    
-    // Verify key methods exist
-    const expectedMethods = ['bc_get_shortint_parameters', 'gen_client_key'];
-    for (const method of expectedMethods) {
-      if (ShortintAfterInit[method as any]) {
-        console.log(`[TFHE] ✓ Shortint.${method} available`);
-      } else {
-        console.warn(`[TFHE] ⚠️ Shortint.${method} not found`);
-      }
-    }
-    
-    // Step 5: Store references
-    console.log('[TFHE] Step 5: Storing module references');
-    tfheModule = tfheUpdated;
+    // Step 5: Store module reference
+    console.log('[TFHE] Step 5: Storing module reference');
+    tfheModule = tfhe;
     tfheReady = true;
     
-    console.log('[TFHE] ✅ TFHE WASM module successfully initialized');
-    console.log('[TFHE] ========== Initialization Complete ==========');
+    console.log('[TFHE] ✅ TFHE initialization complete');
+    console.log('[TFHE] Ready to generate keys and encrypt');
     
   } catch (err) {
-    console.error('[TFHE] ========== Initialization Failed ==========');
-    console.error('[TFHE] Error:', err);
-    
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    console.error('[TFHE] Message:', errorMessage);
-    
-    // Provide actionable diagnostics
-    if (errorMessage.includes('Shortint')) {
-      console.error('[TFHE] DIAGNOSIS: WASM module did not initialize');
-      console.error('[TFHE] ACTION: Check these in order:');
-      console.error('[TFHE]   1. DevTools Network tab → filter .wasm → look for tfhe_bg.wasm');
-      console.error('[TFHE]   2. If Status is 404: WASM not at /tfhe_bg.wasm, check file copied to public/');
-      console.error('[TFHE]   3. If Status is 200 but Content-Type is text/html: Vite serving wrong file');
-      console.error('[TFHE]   4. If Content-Type is application/wasm: Try hard refresh (Cmd+Shift+R)');
-    } else if (errorMessage.includes('Cannot find module')) {
-      console.error('[TFHE] DIAGNOSIS: Package not installed');
-      console.error('[TFHE] ACTION: Run: cd apps/web && pnpm install');
-    } else if (errorMessage.includes('fetch') || errorMessage.includes('404')) {
-      console.error('[TFHE] DIAGNOSIS: WASM file fetch failed');
-      console.error('[TFHE] ACTION: Check Network tab for failed requests');
-    }
-    
-    throw new Error(`TFHE WASM initialization failed: ${errorMessage}`);
+    console.error('[TFHE] Initialization failed:', err);
+    throw new Error(`TFHE initialization failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
 /**
- * Check if TFHE WASM is ready
+ * Check if TFHE is ready
  */
 export function isTfheReady(): boolean {
   return tfheReady && tfheModule !== null;
 }
 
 /**
- * Generate client keys for encryption/decryption
+ * Generate a new TFHE key using the high-level API
  * 
- * TFHE-rs API:
- * ```js
- * let clientKey = TfheClientKey.generate(config);
- * ```
- * 
- * Returns: Serialized client key (should be stored securely, never transmitted)
+ * Returns a Key object that can encrypt/decrypt
  */
-export async function generateClientKeys(): Promise<Uint8Array> {
-  if (!tfheReady || !tfheModule) {
-    throw new Error('[TFHE] WASM not initialized. Call initializeTfheWasm() first');
+export async function generateClientKeys(): Promise<any> {
+  if (!isTfheReady()) {
+    throw new Error('TFHE not initialized. Call initializeTfheWasm() first');
   }
 
   try {
-    console.log('[TFHE] Generating client keys...');
+    console.log('[TFHE] Generating new client key...');
     
-    // Build config with default parameters
-    const config = tfheModule.TfheConfigBuilder.default().build();
+    // Use the high-level createKey() function
+    const key = tfheModule.createKey();
     
-    // Generate client key
-    const clientKey = tfheModule.TfheClientKey.generate(config);
+    console.log('[TFHE] ✓ Key generated');
+    console.log('[TFHE] Key type:', typeof key);
+    console.log('[TFHE] Key has encrypt:', typeof key.encrypt);
+    console.log('[TFHE] Key has decrypt:', typeof key.decrypt);
+    console.log('[TFHE] Key has exportKey:', typeof key.exportKey);
     
-    // Serialize for storage (localStorage, IndexedDB, etc.)
-    const serialized = clientKey.serialize();
-    
-    console.log('[TFHE] Client keys generated', {
-      keySize: serialized.length,
-      keySizeMB: (serialized.length / 1024 / 1024).toFixed(2),
-    });
-    
-    return serialized;
+    return key;
   } catch (err) {
     console.error('[TFHE] Key generation failed:', err);
-    throw new Error(`Key generation failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`Failed to generate TFHE key: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
 /**
- * Encrypt VeilScore signals using TFHE
- * 
- * TFHE-rs API:
- * ```js
- * let publicKey = TfheCompactPublicKey.new(clientKey);
- * let builder = CompactCiphertextList.builder(publicKey);
- * builder.push_u16(followers);
- * builder.push_u32(txCount);
- * builder.push_u8(bracket);
- * let encrypted = builder.build();
- * ```
- * 
- * @param normalized Normalized input signals
- * @param serializedClientKey Serialized client key (from localStorage)
- * @returns Encrypted ciphertext (compact serialized form)
+ * Store client key in localStorage (as base64)
  */
-export async function encryptSignalsWithTfhe(
-  normalized: NormalizedInputs,
-  serializedClientKey: Uint8Array
-): Promise<Uint8Array> {
-  if (!tfheReady || !tfheModule) {
-    throw new Error('[TFHE] WASM not initialized. Call initializeTfheWasm() first');
-  }
-
+export function storeClientKeyLocally(key: any): void {
   try {
-    console.log('[TFHE] Encrypting signals...', {
-      followers: normalized.followers,
-      txCount: normalized.txCount,
-      bracket: normalized.bracket,
-    });
+    if (!key || typeof key.exportKey !== 'function') {
+      console.warn('[TFHE] Key does not have exportKey method, skipping storage');
+      return;
+    }
 
-    // Deserialize client key
-    // Note: In production, deserialize from stored key
-    // For now, regenerate (in real app, store and restore from localStorage)
-    const config = tfheModule.TfheConfigBuilder.default().build();
-    const clientKey = tfheModule.TfheClientKey.generate(config);
-
-    // Generate public key from client key
-    const publicKey = new tfheModule.TfheCompactPublicKey(clientKey);
-
-    // Create compact ciphertext list builder
-    const builder = tfheModule.CompactCiphertextList.builder(publicKey);
-
-    // Push values to be encrypted
-    // Following TFHE-rs types:
-    builder.push_u16(normalized.followers);    // uint16 (0-65535)
-    builder.push_u32(normalized.txCount);       // uint32 (0-4294967295)
-    builder.push_u8(normalized.bracket);        // uint8 (0-255)
-
-    // Build compact ciphertext list
-    const compactList = builder.build();
-
-    // Serialize for transmission to server/relayer
-    const serialized = compactList.serialize();
-
-    console.log('[TFHE] Signals encrypted successfully', {
-      ciphertextSize: serialized.length,
-      ciphertextSizeKB: (serialized.length / 1024).toFixed(2),
-    });
-
-    return serialized;
-  } catch (err) {
-    console.error('[TFHE] Encryption failed:', err);
-    throw new Error(`Signal encryption failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-/**
- * Decrypt TFHE ciphertext (Model 1 - local decryption)
- * 
- * TFHE-rs API:
- * ```js
- * let deserialized = CompactCiphertextList.deserialize(buffer);
- * let encrypted = deserialized.expand();
- * let decrypted = encrypted.get_uint32(0).decrypt(clientKey);
- * ```
- * 
- * @param encryptedData Encrypted ciphertext (from relayer/contract)
- * @param serializedClientKey Serialized client key (secret key, never transmitted)
- * @returns Decrypted values { followers, txCount, bracket }
- */
-export async function decryptSignalsWithTfhe(
-  encryptedData: Uint8Array,
-  serializedClientKey: Uint8Array
-): Promise<NormalizedInputs> {
-  if (!tfheReady || !tfheModule) {
-    throw new Error('[TFHE] WASM not initialized. Call initializeTfheWasm() first');
-  }
-
-  try {
-    console.log('[TFHE] Decrypting signals...', {
-      ciphertextSize: encryptedData.length,
-    });
-
-    // Regenerate client key from serialized version
-    const config = tfheModule.TfheConfigBuilder.default().build();
-    const clientKey = tfheModule.TfheClientKey.generate(config);
-
-    // Deserialize the compact ciphertext list
-    // The TFHE-rs WASM API uses CompactCiphertextList.deserialize or direct import
-    let deserialized: any;
-    const ccl = (tfheModule as any).CompactCiphertextList;
-    if (ccl && typeof ccl.deserialize === 'function') {
-      deserialized = ccl.deserialize(encryptedData);
-    } else if (typeof (tfheModule as any).deserialize === 'function') {
-      deserialized = (tfheModule as any).deserialize(encryptedData);
+    const base64Key = key.exportKey('base64');
+    if (base64Key) {
+      localStorage.setItem('tfhe_client_key', base64Key);
+      console.log('[TFHE] ✓ Key stored in localStorage');
     } else {
-      throw new Error('No deserialize method found in TFHE module. Ensure @zama-fhe/tfhe-js is properly installed.');
+      console.warn('[TFHE] exportKey() returned undefined');
     }
-
-    // Expand for decryption
-    const encrypted = deserialized.expand();
-
-    // Verify we have 3 values
-    if (encrypted.len() !== 3) {
-      throw new Error(
-        `Expected 3 encrypted values, got ${encrypted.len()}. ` +
-        `Format: [followers (u16), txCount (u32), bracket (u8)]`
-      );
-    }
-
-    // Decrypt each value
-    const followers = encrypted.get_uint16(0).decrypt(clientKey) as number;
-    const txCount = encrypted.get_uint32(1).decrypt(clientKey) as number;
-    const bracket = encrypted.get_uint8(2).decrypt(clientKey) as number;
-
-    console.log('[TFHE] Signals decrypted successfully', {
-      followers,
-      txCount,
-      bracket,
-    });
-
-    return { followers, txCount, bracket };
   } catch (err) {
-    console.error('[TFHE] Decryption failed:', err);
-    throw new Error(`Signal decryption failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn('[TFHE] Failed to store key:', err);
   }
 }
 
 /**
- * Get public key from client key (for encryption)
- * 
- * TFHE-rs API:
- * ```js
- * let publicKey = TfheCompactPublicKey.new(clientKey);
- * ```
- * 
- * The public key is needed to encrypt data. It can be transmitted over network.
- * 
- * @param serializedClientKey Serialized client key
- * @returns Serialized public key (safe to transmit)
+ * Retrieve client key from localStorage
  */
-export async function getPublicKeyFromClientKey(
-  serializedClientKey: Uint8Array
-): Promise<Uint8Array> {
-  if (!tfheReady || !tfheModule) {
-    throw new Error('[TFHE] WASM not initialized. Call initializeTfheWasm() first');
-  }
-
+export function retrieveClientKeyLocally(): any {
   try {
-    // Regenerate client key
-    const config = tfheModule.TfheConfigBuilder.default().build();
-    const clientKey = tfheModule.TfheClientKey.generate(config);
-
-    // Generate public key
-    const publicKey = new tfheModule.TfheCompactPublicKey(clientKey);
-
-    // Return serialized public key
-    // Note: CompactPublicKey should have serialize() method
-    return (publicKey as any).serialize?.() || new Uint8Array();
-  } catch (err) {
-    console.error('[TFHE] Failed to get public key:', err);
-    throw new Error(`Public key retrieval failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-/**
- * Store client key securely in browser
- * 
- * Stores in localStorage (for demo) or IndexedDB (production)
- * Never transmit this key over network!
- * 
- * @param serializedClientKey Serialized client key
- * @param storageKey Key to store under (default: 'veilscore_client_key')
- */
-export function storeClientKeyLocally(
-  serializedClientKey: Uint8Array,
-  storageKey: string = 'veilscore_client_key'
-): void {
-  try {
-    // Convert to base64 for localStorage
-    const base64 = btoa(String.fromCharCode.apply(null, Array.from(serializedClientKey)));
-    localStorage.setItem(storageKey, base64);
-    console.log('[TFHE] Client key stored locally');
-  } catch (err) {
-    console.error('[TFHE] Failed to store client key:', err);
-    throw new Error(`Key storage failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-/**
- * Retrieve client key from browser storage
- * 
- * @param storageKey Key to retrieve from (default: 'veilscore_client_key')
- * @returns Serialized client key or null if not found
- */
-export function retrieveClientKeyLocally(
-  storageKey: string = 'veilscore_client_key'
-): Uint8Array | null {
-  try {
-    const base64 = localStorage.getItem(storageKey);
-    if (!base64) {
+    const base64Key = localStorage.getItem('tfhe_client_key');
+    if (!base64Key) {
+      console.log('[TFHE] No stored key found');
       return null;
     }
 
-    // Convert from base64
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
+    if (!tfheModule || !tfheModule.createKeyFromBase64) {
+      console.warn('[TFHE] Module not ready or createKeyFromBase64 not available');
+      return null;
     }
-    return bytes;
+
+    const key = tfheModule.createKeyFromBase64({ secretKey: base64Key });
+    console.log('[TFHE] ✓ Key restored from localStorage');
+    return key;
   } catch (err) {
-    console.error('[TFHE] Failed to retrieve client key:', err);
+    console.warn('[TFHE] Failed to retrieve key:', err);
     return null;
   }
 }
 
 /**
- * Clear stored client key from browser
+ * Encrypt signals using TFHE
+ * 
+ * Takes normalized inputs and encrypts each value separately
+ * Returns object with encrypted fields
  */
-export function clearStoredClientKey(
-  storageKey: string = 'veilscore_client_key'
-): void {
-  localStorage.removeItem(storageKey);
-  console.log('[TFHE] Client key cleared from storage');
+export async function encryptSignalsWithTfhe(
+  normalized: NormalizedInputs,
+  key?: any
+): Promise<EncryptedSignals> {
+  if (!isTfheReady()) {
+    throw new Error('TFHE not initialized');
+  }
+
+  try {
+    // Use provided key or generate new one
+    let encryptionKey = key;
+    if (!encryptionKey) {
+      encryptionKey = await generateClientKeys();
+    }
+
+    if (!encryptionKey || typeof encryptionKey.encrypt !== 'function') {
+      throw new Error('Invalid key object - must have encrypt() method');
+    }
+
+    console.log('[TFHE] Encrypting signals:', {
+      followers: normalized.followers,
+      txCount: normalized.txCount,
+      bracket: normalized.bracket,
+    });
+
+    // Encrypt each value as bigint
+    // Note: Key.encrypt() expects bigint and returns Uint8Array
+    const followers = encryptionKey.encrypt(BigInt(normalized.followers));
+    const txCount = encryptionKey.encrypt(BigInt(normalized.txCount));
+    const bracket = encryptionKey.encrypt(BigInt(normalized.bracket));
+
+    console.log('[TFHE] ✓ Signals encrypted');
+    console.log('[TFHE] Ciphertext sizes:', {
+      followers: followers.length,
+      txCount: txCount.length,
+      bracket: bracket.length,
+    });
+
+    return { followers, txCount, bracket };
+  } catch (err) {
+    console.error('[TFHE] Encryption failed:', err);
+    throw new Error(`TFHE encryption failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Decrypt signals using TFHE
+ */
+export async function decryptSignalsWithTfhe(
+  encrypted: EncryptedSignals,
+  key: any
+): Promise<NormalizedInputs> {
+  if (!isTfheReady()) {
+    throw new Error('TFHE not initialized');
+  }
+
+  try {
+    if (!key || typeof key.decrypt !== 'function') {
+      throw new Error('Invalid key object - must have decrypt() method');
+    }
+
+    console.log('[TFHE] Decrypting signals...');
+
+    // Decrypt each ciphertext
+    const followers = Number(key.decrypt(encrypted.followers));
+    const txCount = Number(key.decrypt(encrypted.txCount));
+    const bracket = Number(key.decrypt(encrypted.bracket));
+
+    console.log('[TFHE] ✓ Signals decrypted');
+    console.log('[TFHE] Decrypted values:', { followers, txCount, bracket });
+
+    return { followers, txCount, bracket };
+  } catch (err) {
+    console.error('[TFHE] Decryption failed:', err);
+    throw new Error(`TFHE decryption failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Combined encryption: signals + commitment
+ * 
+ * This is what gets called from zama.ts
+ */
+export async function encryptWithTfheAndCommit(normalized: NormalizedInputs): Promise<{
+  encrypted: EncryptedSignals;
+  ciphertext: Uint8Array;
+  commitment: string;
+}> {
+  try {
+    // Ensure initialized
+    if (!isTfheReady()) {
+      console.log('[TFHE] Module not ready, initializing...');
+      await initializeTfheWasm();
+    }
+
+    // Generate or retrieve key
+    let key = clientKey;
+    if (!key) {
+      console.log('[TFHE] No key in memory, generating new one...');
+      key = await generateClientKeys();
+      storeClientKeyLocally(key);
+      clientKey = key;
+    }
+
+    // Encrypt signals
+    const encrypted = await encryptSignalsWithTfhe(normalized, key);
+
+    // Create combined ciphertext (concat all encrypted values)
+    const parts = [encrypted.followers, encrypted.txCount, encrypted.bracket];
+    const totalLength = parts.reduce((sum, p) => sum + p.length, 0);
+    const ciphertext = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of parts) {
+      ciphertext.set(part, offset);
+      offset += part.length;
+    }
+
+    // Create commitment hash
+    const encoder = new TextEncoder();
+    const payload = JSON.stringify(normalized);
+    const digest = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
+    const commitment = `0x${Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')}`;
+
+    console.log('[TFHE] ✓ Full encryption complete', {
+      ciphertextSize: ciphertext.length,
+      commitment,
+    });
+
+    return { encrypted, ciphertext, commitment };
+  } catch (err) {
+    console.error('[TFHE] Full encryption failed:', err);
+    throw err;
+  }
 }

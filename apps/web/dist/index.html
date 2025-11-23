@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <title>VeilScore FHEVM Demo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- DEV ONLY: allow eval/new Function so TFHE init can run, and allow localhost for local backend -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https:; connect-src 'self' http://localhost:* https: wss:; style-src 'self' 'unsafe-inline'; object-src 'none';"/>
     <!-- Setup CommonJS globals for TFHE WASM module compatibility -->
     <script>
       window.exports = {};
@@ -11,10 +14,29 @@
       if (typeof window.global === 'undefined') {
         window.global = window;
       }
+      
+      // Diagnostic script to verify WASM accessibility
+      console.log('[WASM Diagnostic] Checking WASM file accessibility...');
+      fetch('/tfhe_bg.wasm', { method: 'HEAD' })
+        .then(res => {
+          console.log(`[WASM Diagnostic] ✓ HEAD /tfhe_bg.wasm: ${res.status}`);
+          console.log(`[WASM Diagnostic]   Content-Type: ${res.headers.get('content-type')}`);
+          console.log(`[WASM Diagnostic]   Content-Length: ${res.headers.get('content-length')} bytes`);
+        })
+        .catch(err => {
+          console.warn('[WASM Diagnostic] HEAD request failed, trying GET...');
+          fetch('/tfhe_bg.wasm')
+            .then(res => {
+              console.log(`[WASM Diagnostic] ✓ GET /tfhe_bg.wasm: ${res.status}`);
+              console.log(`[WASM Diagnostic]   Content-Type: ${res.headers.get('content-type')}`);
+              console.log(`[WASM Diagnostic]   Content-Length: ${res.headers.get('content-length')} bytes`);
+            })
+            .catch(getErr => {
+              console.error('[WASM Diagnostic] ✗ Cannot access /tfhe_bg.wasm:', getErr.message);
+            });
+        });
     </script>
-    <!-- Zama Relayer SDK for FHEVM -->
-    <script src="https://cdn.zama.org/relayer-sdk/relayer-sdk.latest.js"></script>
-    <script type="module" crossorigin src="/assets/index-DjmXy9X8.js"></script>
+    <script type="module" crossorigin src="/assets/index-CXGS8xAk.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-D1d02LIS.css">
   </head>
   <body>
